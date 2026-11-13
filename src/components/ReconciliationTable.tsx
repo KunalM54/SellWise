@@ -186,7 +186,7 @@ export const ReconciliationTable: React.FC<ReconciliationTableProps> = ({ orders
                   >
                     <td className="py-3.5 px-4">
                       <div className="font-bold text-ink font-mono">{order.orderId}</div>
-                      <div className="flex items-center gap-1.5 mt-0.5">
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                         <span
                           className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
                             order.marketplace === 'meesho'
@@ -199,6 +199,9 @@ export const ReconciliationTable: React.FC<ReconciliationTableProps> = ({ orders
                           {order.marketplace}
                         </span>
                         <span className="text-[10px] text-ink-muted">{order.orderDate}</span>
+                        <span className="text-[10px] text-ink font-medium bg-surface-sunken px-1.5 py-0.5 rounded border border-outline">
+                          📍 {order.customerCity}
+                        </span>
                       </div>
                     </td>
 
@@ -323,6 +326,16 @@ export const ReconciliationTable: React.FC<ReconciliationTableProps> = ({ orders
 
             <div className="space-y-4 text-xs">
               <div className="bg-surface-sunken rounded-2xl p-4 border border-outline space-y-2 font-mono">
+                <div className="flex justify-between text-ink font-bold pb-2 border-b border-outline">
+                  <span>Customer Destination</span>
+                  <span className="font-sans font-bold text-sky-deep">{selectedOrder.customerCity}, {selectedOrder.customerState}</span>
+                </div>
+                {(selectedOrder.courier || selectedOrder.awbNumber) && (
+                  <div className="flex justify-between text-ink-muted pb-2 border-b border-outline text-[11px]">
+                    <span>Courier & AWB</span>
+                    <span className="font-sans font-medium text-ink">{selectedOrder.courier || '-'} ({selectedOrder.awbNumber || 'No AWB'})</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-ink font-bold pb-2 border-b border-outline">
                   <span>Gross Selling Price</span>
                   <span>₹{selectedOrder.salePrice}</span>

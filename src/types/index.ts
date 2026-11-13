@@ -1,6 +1,20 @@
 export type Marketplace = 'meesho' | 'flipkart' | 'amazon' | 'all';
 
-export type OrderStatus = 'Delivered' | 'Shipped' | 'In-Transit' | 'RTO' | 'Customer Return' | 'Cancelled';
+export type OrderStatus = 
+  | 'Delivered' 
+  | 'Shipped' 
+  | 'In-Transit' 
+  | 'RTO' 
+  | 'Customer Return' 
+  | 'Cancelled'
+  | 'Ready To Ship'
+  | 'Out For Delivery'
+  | 'Return Received'
+  | 'Return Not Received'
+  | 'Return In Transit'
+  | 'Return Mismatch'
+  | 'Unsettled Pickup'
+  | 'Cancel Pickup';
 
 export type ReconciliationStatus = 'Settled' | 'Discrepancy' | 'Pending' | 'Claim Filed' | 'Claim Approved';
 
@@ -16,6 +30,7 @@ export interface SkuMasterItem {
 export interface OrderItem {
   id: string;
   orderId: string;
+  orderNumber?: string;
   marketplace: 'meesho' | 'flipkart' | 'amazon';
   orderDate: string;
   sku: string;
@@ -38,6 +53,12 @@ export interface OrderItem {
   discrepancyReason?: string;
   claimEligible: boolean;
   claimStatus?: 'Not Eligible' | 'Eligible' | 'Filed' | 'Approved' | 'Rejected';
+  // Courier & Order Mantra metadata
+  awbNumber?: string;
+  courier?: string;
+  returnType?: 'RTO' | 'CUSTOMER RETURN' | 'DELIVERED' | 'CANCELLED';
+  scanDate?: string;
+  daysInTransit?: number;
   // Weight & Bank reconciliation metadata
   billedWeightGrams?: number;
   actualWeightGrams?: number;

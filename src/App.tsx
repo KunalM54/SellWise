@@ -9,6 +9,8 @@ import { SkuMatrix } from './components/SkuMatrix';
 import { SkuManager } from './components/SkuManager';
 import { ReturnAuditScanner } from './components/ReturnAuditScanner';
 import { ClaimsTracker } from './components/ClaimsTracker';
+import { OrderMantraDashboard } from './components/OrderMantraDashboard';
+import { OrderMantraDetailModal, OrderMantraCategoryInfo } from './components/OrderMantraDetailModal';
 import { INITIAL_ORDERS, INITIAL_CLAIMS, INITIAL_SKU_MASTER } from './data/mockData';
 import { OrderItem, SkuMetric, ClaimItem, SkuMasterItem, Marketplace } from './types';
 import {
@@ -17,13 +19,17 @@ import {
   RotateCcw,
   FileSpreadsheet,
   UploadCloud,
+  LayoutGrid,
+  BarChart3,
 } from 'lucide-react';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [overviewMode, setOverviewMode] = useState<'mantra' | 'classic'>('mantra');
   const [currentMarketplace, setCurrentMarketplace] = useState<Marketplace>('all');
   const [dateRange, setDateRange] = useState<string>('30D');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [selectedMantraCategory, setSelectedMantraCategory] = useState<OrderMantraCategoryInfo | null>(null);
 
   // App Master state
   const [orders, setOrders] = useState<OrderItem[]>(INITIAL_ORDERS);
@@ -203,6 +209,10 @@ export function App() {
     setSkuMasterList((prev) => prev.filter(s => s.sku !== skuCode));
   };
 
+  const handleDeleteOrder = (orderId: string) => {
+    setOrders((prev) => prev.filter((o) => o.orderId !== orderId));
+  };
+
   const handleUpdateOrderStatus = (orderId: string, status: OrderItem['status']) => {
     setOrders((prev) =>
       prev.map((o) => (o.orderId === orderId ? { ...o, status } : o))
@@ -266,58 +276,112 @@ export function App() {
           
           {/* Tab 1: Overview */}
           {activeTab === 'overview' && (
-            <div className="space-y-8 animate-fadeIn">
+            <div className="space-y-6 animate-fadeIn">
               
-              {/* KPI Metric Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                <MetricCard
-                  title="Gross Order Sales"
-                  value={`₹${metrics.grossSales.toLocaleString('en-IN')}`}
-                  subValue={`${metrics.orderCount} total orders recorded`}
-                  badge={metrics.orderCount > 0 ? `${metrics.orderCount} Orders` : 'Empty'}
-                  badgeType="sky"
-                  theme="sky"
-                  icon={TrendingUp}
-                />
+              {/* View Switcher Banner */}
+              <div className="flex items-center justify-between bg-surface-elevated p-2 rounded-xl border border-outline shadow-xs">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setOverviewMode('mantra')}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      overviewMode === 'mantra'
+                        ? 'bg-[#1b7e6d] text-white shadow-xs'
+                        : 'text-ink-muted hover:text-ink hover:bg-surface-sunken'
+                    }`}
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5" />
+                    <span>Order Mantra Dashboard (Category View)</span>
+                  </button>
 
-                <MetricCard
-                  title="Real Net Profit"
-                  value={`₹${metrics.netProfit.toLocaleString('en-IN')}`}
-                  subValue={`${metrics.marginPercent}% clean margin after COGS`}
-                  badge={metrics.netProfit > 0 ? 'Profitable' : '₹0'}
-                  badgeType="leaf"
-                  theme="leaf"
-                  icon={TrendingUp}
-                />
+                  <button
+                    onClick={() => setOverviewMode('classic')}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      overviewMode === 'classic'
+                        ? 'bg-sky text-white shadow-xs'
+                        : 'text-ink-muted hover:text-ink hover:bg-surface-sunken'
+                    }`}
+                  >
+                    <BarChart3 className="w-3.5 h-3.5" />
+                    <span>Executive KPI & Charts</span>
+                  </button>
+                </div>
 
-                <MetricCard
-                  title="Detected Discrepancies"
-                  value={`₹${metrics.discrepancies.toLocaleString('en-IN')}`}
-                  subValue={metrics.weightLeaks > 0 ? `${metrics.weightLeaks} courier weight overcharges` : 'Overcharged fees & missing payouts'}
-                  badge={metrics.discrepancies > 0 ? 'Action Needed' : 'None'}
-                  badgeType="coral"
-                  theme="coral"
-                  icon={AlertOctagon}
-                />
-
-                <MetricCard
-                  title="RTO & Return Losses"
-                  value={`₹${metrics.rtoLoss.toLocaleString('en-IN')}`}
-                  subValue="Freight penalty & damaged stock"
-                  badge={metrics.rtoLoss > 0 ? 'Loss Tracked' : '₹0'}
-                  badgeType="coral"
-                  theme="coral"
-                  icon={RotateCcw}
-                />
+                <div className="text-[11px] text-ink-muted font-mono hidden sm:block pr-2">
+                  Click any category box below to view Excel order ledger
+                </div>
               </div>
 
-              {/* Dynamic Interactive Charts */}
-              <ProfitChart
-                orders={displayedOrders}
-                onImportClick={() => setActiveTab('import')}
-              />
+              {/* Mode 1: Order Mantra Category Dashboard */}
+              {overviewMode === 'mantra' && (
+                <OrderMantraDashboard
+                  orders={displayedOrders}
+                  claims={claims}
+                  skuMasterList={skuMasterList}
+                  currentMarketplace={currentMarketplace}
+                  onSelectCategory={(category) => setSelectedMantraCategory(category)}
+                  onOpenImport={() => setActiveTab('import')}
+                  onOpenScanner={() => setActiveTab('scanner')}
+                  onOpenSkuManager={() => setActiveTab('sku-manager')}
+                  onRefresh={handleRefresh}
+                  isRefreshing={isRefreshing}
+                />
+              )}
 
-              {/* Orders Table or Clean Empty State */}
+              {/* Mode 2: Executive KPI Cards & Charts */}
+              {overviewMode === 'classic' && (
+                <div className="space-y-8 animate-fadeIn">
+                  {/* KPI Metric Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                    <MetricCard
+                      title="Gross Order Sales"
+                      value={`₹${metrics.grossSales.toLocaleString('en-IN')}`}
+                      subValue={`${metrics.orderCount} total orders recorded`}
+                      badge={metrics.orderCount > 0 ? `${metrics.orderCount} Orders` : 'Empty'}
+                      badgeType="sky"
+                      theme="sky"
+                      icon={TrendingUp}
+                    />
+
+                    <MetricCard
+                      title="Real Net Profit"
+                      value={`₹${metrics.netProfit.toLocaleString('en-IN')}`}
+                      subValue={`${metrics.marginPercent}% clean margin after COGS`}
+                      badge={metrics.netProfit > 0 ? 'Profitable' : '₹0'}
+                      badgeType="leaf"
+                      theme="leaf"
+                      icon={TrendingUp}
+                    />
+
+                    <MetricCard
+                      title="Detected Discrepancies"
+                      value={`₹${metrics.discrepancies.toLocaleString('en-IN')}`}
+                      subValue={metrics.weightLeaks > 0 ? `${metrics.weightLeaks} courier weight overcharges` : 'Overcharged fees & missing payouts'}
+                      badge={metrics.discrepancies > 0 ? 'Action Needed' : 'None'}
+                      badgeType="coral"
+                      theme="coral"
+                      icon={AlertOctagon}
+                    />
+
+                    <MetricCard
+                      title="RTO & Return Losses"
+                      value={`₹${metrics.rtoLoss.toLocaleString('en-IN')}`}
+                      subValue="Freight penalty & damaged stock"
+                      badge={metrics.rtoLoss > 0 ? 'Loss Tracked' : '₹0'}
+                      badgeType="coral"
+                      theme="coral"
+                      icon={RotateCcw}
+                    />
+                  </div>
+
+                  {/* Dynamic Interactive Charts */}
+                  <ProfitChart
+                    orders={displayedOrders}
+                    onImportClick={() => setActiveTab('import')}
+                  />
+                </div>
+              )}
+
+              {/* Recent Orders Table or Empty State */}
               {displayedOrders.length === 0 ? (
                 <div className="bg-surface-elevated rounded-card p-10 border border-outline shadow-soft text-center flex flex-col items-center justify-center gap-3">
                   <div className="w-14 h-14 rounded-2xl bg-sky-soft text-sky-deep flex items-center justify-center">
@@ -430,6 +494,18 @@ export function App() {
 
         </main>
       </div>
+
+      {/* Order Mantra Excel Detailed View Modal */}
+      {selectedMantraCategory && (
+        <OrderMantraDetailModal
+          category={selectedMantraCategory}
+          orders={displayedOrders}
+          storeName="Seller Store"
+          onClose={() => setSelectedMantraCategory(null)}
+          onOpenClaim={handleOpenClaimFromOrder}
+          onDeleteOrder={handleDeleteOrder}
+        />
+      )}
 
     </div>
   );
