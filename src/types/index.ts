@@ -4,6 +4,15 @@ export type OrderStatus = 'Delivered' | 'Shipped' | 'In-Transit' | 'RTO' | 'Cust
 
 export type ReconciliationStatus = 'Settled' | 'Discrepancy' | 'Pending' | 'Claim Filed' | 'Claim Approved';
 
+export interface SkuMasterItem {
+  sku: string;
+  title: string;
+  costPrice: number;
+  packagingCost: number;
+  weightGrams: number;
+  category?: string;
+}
+
 export interface OrderItem {
   id: string;
   orderId: string;
@@ -29,6 +38,12 @@ export interface OrderItem {
   discrepancyReason?: string;
   claimEligible: boolean;
   claimStatus?: 'Not Eligible' | 'Eligible' | 'Filed' | 'Approved' | 'Rejected';
+  // Weight & Bank reconciliation metadata
+  billedWeightGrams?: number;
+  actualWeightGrams?: number;
+  weightDiscrepancy?: boolean;
+  bankUtr?: string;
+  bankDepositDate?: string;
 }
 
 export interface SkuMetric {
@@ -45,6 +60,7 @@ export interface SkuMetric {
   profitMarginPercent: number;
   returnRatePercent: number;
   type: 'Hero' | 'Profitable' | 'Breakeven' | 'Laggard';
+  weightGrams?: number;
 }
 
 export interface ClaimItem {
@@ -59,4 +75,6 @@ export interface ClaimItem {
   status: 'Draft' | 'Filed' | 'Approved' | 'Rejected';
   ticketId?: string;
   deadlineDate: string;
+  evidenceNotes?: string;
+  barcode?: string;
 }

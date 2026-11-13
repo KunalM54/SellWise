@@ -6,15 +6,17 @@ import { ProfitChart } from './components/ProfitChart';
 import { FileUploader } from './components/FileUploader';
 import { ReconciliationTable } from './components/ReconciliationTable';
 import { SkuMatrix } from './components/SkuMatrix';
+import { SkuManager } from './components/SkuManager';
+import { ReturnAuditScanner } from './components/ReturnAuditScanner';
 import { ClaimsTracker } from './components/ClaimsTracker';
-import { INITIAL_ORDERS, INITIAL_CLAIMS } from './data/mockData';
-import { OrderItem, SkuMetric, ClaimItem, Marketplace } from './types';
+import { INITIAL_ORDERS, INITIAL_CLAIMS, INITIAL_SKU_MASTER } from './data/mockData';
+import { OrderItem, SkuMetric, ClaimItem, SkuMasterItem, Marketplace } from './types';
 import {
   TrendingUp,
   AlertOctagon,
   RotateCcw,
-  UploadCloud,
   FileSpreadsheet,
+  UploadCloud,
 } from 'lucide-react';
 
 export function App() {
@@ -23,9 +25,10 @@ export function App() {
   const [dateRange, setDateRange] = useState<string>('30D');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // 100% dynamic - no dummy data!
+  // App Master state
   const [orders, setOrders] = useState<OrderItem[]>(INITIAL_ORDERS);
   const [claims, setClaims] = useState<ClaimItem[]>(INITIAL_CLAIMS);
+  const [skuMasterList, setSkuMasterList] = useState<SkuMasterItem[]>(INITIAL_SKU_MASTER);
 
   // Filter orders by selected channel
   const displayedOrders = useMemo(() => {
@@ -41,6 +44,8 @@ export function App() {
 
     displayedOrders.forEach((o) => {
       const s = o.sku || 'GENERAL-SKU';
+      const master = skuMasterList.find((m) => m.sku.toLowerCase() === s.toLowerCase());
+
       if (!map[s]) {
         map[s] = {
           sku: s,
@@ -56,6 +61,7 @@ export function App() {
           profitMarginPercent: 0,
           returnRatePercent: 0,
           type: 'Profitable',
+          weightGrams: master?.weightGrams || o.actualWeightGrams || 350,
         };
       }
 
@@ -85,7 +91,7 @@ export function App() {
       let type: SkuMetric['type'] = 'Profitable';
       if (sku.netProfit < 0 || returnRate > 35) {
         type = 'Laggard';
-      } else if (margin > 30 && returnRate < 15 && sku.totalOrders >= 2) {
+      } else if (margin > 25 && returnRate < 20 && sku.totalOrders >= 1) {
         type = 'Hero';
       } else if (margin <= 10) {
         type = 'Breakeven';
@@ -98,7 +104,7 @@ export function App() {
         type,
       };
     });
-  }, [displayedOrders]);
+  }, [displayedOrders, skuMasterList]);
 
   // Aggregate Metrics dynamically
   const metrics = useMemo(() => {
@@ -107,6 +113,7 @@ export function App() {
     let discrepancies = 0;
     let rtoLoss = 0;
     let totalDeductions = 0;
+    let weightLeaks = 0;
 
     displayedOrders.forEach((o) => {
       grossSales += o.salePrice;
@@ -115,6 +122,9 @@ export function App() {
       discrepancies += o.discrepancyAmount;
       if (o.status === 'RTO' || o.status === 'Customer Return') {
         rtoLoss += (o.reverseShippingFee + o.shippingFee + o.packagingCost);
+      }
+      if (o.weightDiscrepancy) {
+        weightLeaks += 1;
       }
       totalDeductions += (o.marketplaceCommission + o.shippingFee + o.reverseShippingFee + o.taxesAndGst);
     });
@@ -125,6 +135,7 @@ export function App() {
       discrepancies,
       rtoLoss,
       totalDeductions,
+      weightLeaks,
       orderCount: displayedOrders.length,
       marginPercent: grossSales > 0 ? Math.round((netProfit / grossSales) * 100) : 0,
     };
@@ -138,12 +149,64 @@ export function App() {
   };
 
   const handleOrdersImported = (importedOrders: OrderItem[]) => {
-    setOrders((prev) => [...importedOrders, ...prev]);
+    // Avoid duplicate orders if re-importing
+    setOrders((prev) => {
+      const existingIds = new Set(prev.map(p => p.orderId));
+      const newOrders = importedOrders.filter(o => !existingIds.has(o.orderId));
+      return [...newOrders, ...prev];
+    });
     setActiveTab('reconciliation');
   };
 
   const handleAddClaim = (newClaim: ClaimItem) => {
     setClaims((prev) => [newClaim, ...prev]);
+  };
+
+  const handleUpdateClaimStatus = (claimId: string, status: ClaimItem['status'], amountApproved: number) => {
+    setClaims((prev) =>
+      prev.map((c) => (c.id === claimId ? { ...c, status, amountApproved } : c))
+    );
+  };
+
+  const handleSaveSku = (skuItem: SkuMasterItem) => {
+    setSkuMasterList((prev) => {
+      const idx = prev.findIndex(s => s.sku === skuItem.sku);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = skuItem;
+        return copy;
+      }
+      return [skuItem, ...prev];
+    });
+
+    // Update existing orders linked to this SKU with new cost and weight
+    setOrders((prev) =>
+      prev.map((o) => {
+        if (o.sku.toLowerCase() === skuItem.sku.toLowerCase()) {
+          const actualWeight = skuItem.weightGrams;
+          const billed = o.billedWeightGrams || actualWeight;
+          const isWeightOver = billed > actualWeight + 200;
+          return {
+            ...o,
+            productCost: skuItem.costPrice,
+            packagingCost: skuItem.packagingCost,
+            actualWeightGrams: actualWeight,
+            weightDiscrepancy: isWeightOver,
+          };
+        }
+        return o;
+      })
+    );
+  };
+
+  const handleDeleteSku = (skuCode: string) => {
+    setSkuMasterList((prev) => prev.filter(s => s.sku !== skuCode));
+  };
+
+  const handleUpdateOrderStatus = (orderId: string, status: OrderItem['status']) => {
+    setOrders((prev) =>
+      prev.map((o) => (o.orderId === orderId ? { ...o, status } : o))
+    );
   };
 
   const handleOpenClaimFromOrder = (order: OrderItem) => {
@@ -152,20 +215,25 @@ export function App() {
       orderId: order.orderId,
       marketplace: order.marketplace,
       sku: order.sku,
-      claimType: order.status === 'Customer Return' ? 'Wrong Return' : 'Weight Mismatch Overcharge',
+      claimType: order.weightDiscrepancy 
+        ? 'Weight Mismatch Overcharge' 
+        : order.status === 'Customer Return' 
+        ? 'Wrong Return' 
+        : 'Payment Not Credited',
       amountClaimed: order.discrepancyAmount > 0 ? order.discrepancyAmount : 150,
       amountApproved: 0,
       filingDate: new Date().toISOString().split('T')[0],
       status: 'Filed',
       ticketId: `TCK-${Math.floor(100000 + Math.random() * 900000)}`,
       deadlineDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      evidenceNotes: order.discrepancyReason || 'Raised via Reconciliation Ledger dispute button.',
     };
     handleAddClaim(claim);
     setActiveTab('claims');
   };
 
   const discrepanciesCount = useMemo(() => {
-    return orders.filter((o) => o.reconciliationStatus === 'Discrepancy').length;
+    return orders.filter((o) => o.reconciliationStatus === 'Discrepancy' || o.weightDiscrepancy).length;
   }, [orders]);
 
   return (
@@ -215,7 +283,7 @@ export function App() {
                 <MetricCard
                   title="Real Net Profit"
                   value={`₹${metrics.netProfit.toLocaleString('en-IN')}`}
-                  subValue={`${metrics.marginPercent}% clean profit margin`}
+                  subValue={`${metrics.marginPercent}% clean margin after COGS`}
                   badge={metrics.netProfit > 0 ? 'Profitable' : '₹0'}
                   badgeType="leaf"
                   theme="leaf"
@@ -225,7 +293,7 @@ export function App() {
                 <MetricCard
                   title="Detected Discrepancies"
                   value={`₹${metrics.discrepancies.toLocaleString('en-IN')}`}
-                  subValue="Overcharged fees & missing payouts"
+                  subValue={metrics.weightLeaks > 0 ? `${metrics.weightLeaks} courier weight overcharges` : 'Overcharged fees & missing payouts'}
                   badge={metrics.discrepancies > 0 ? 'Action Needed' : 'None'}
                   badgeType="coral"
                   theme="coral"
@@ -249,17 +317,17 @@ export function App() {
                 onImportClick={() => setActiveTab('import')}
               />
 
-              {/* Empty State Banner or Recent Activity */}
+              {/* Orders Table or Clean Empty State */}
               {displayedOrders.length === 0 ? (
-                <div className="bg-surface-elevated rounded-card p-8 border border-outline shadow-soft text-center flex flex-col items-center justify-center gap-3">
+                <div className="bg-surface-elevated rounded-card p-10 border border-outline shadow-soft text-center flex flex-col items-center justify-center gap-3">
                   <div className="w-14 h-14 rounded-2xl bg-sky-soft text-sky-deep flex items-center justify-center">
                     <FileSpreadsheet className="w-7 h-7 stroke-[2.2]" />
                   </div>
                   <h3 className="text-base font-bold font-display text-ink">
-                    No Orders Recorded Yet
+                    No Orders Uploaded Yet
                   </h3>
                   <p className="text-xs text-ink-muted max-w-md">
-                    Upload your raw order report or payment settlement sheet from Meesho, Flipkart, or Amazon to populate your dashboard with real numbers.
+                    Upload your raw order report or payment settlement sheet from Meesho, Flipkart, or Amazon to view your real profit and payment reconciliation.
                   </p>
                   <button
                     onClick={() => setActiveTab('import')}
@@ -272,7 +340,7 @@ export function App() {
               ) : (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-base font-bold font-display text-ink">Recent Orders</h3>
+                    <h3 className="text-base font-bold font-display text-ink">Recent Orders & Payout Status</h3>
                     <button
                       onClick={() => setActiveTab('reconciliation')}
                       className="text-xs text-sky font-bold hover:underline"
@@ -293,7 +361,10 @@ export function App() {
           {/* Tab 2: Ingestion Dropzone */}
           {activeTab === 'import' && (
             <div className="space-y-6 animate-fadeIn">
-              <FileUploader onOrdersImported={handleOrdersImported} />
+              <FileUploader 
+                onOrdersImported={handleOrdersImported}
+                skuMasterList={skuMasterList}
+              />
               {displayedOrders.length > 0 && (
                 <ReconciliationTable
                   orders={displayedOrders}
@@ -313,20 +384,46 @@ export function App() {
             </div>
           )}
 
-          {/* Tab 4: SKU Matrix */}
-          {activeTab === 'skus' && (
+          {/* Tab 4: Inbound Return & Barcode Scanner */}
+          {activeTab === 'scanner' && (
             <div className="space-y-6 animate-fadeIn">
-              <SkuMatrix skus={skus} />
+              <ReturnAuditScanner
+                orders={orders}
+                onFileClaimFromScan={handleAddClaim}
+                onUpdateOrderStatus={handleUpdateOrderStatus}
+              />
             </div>
           )}
 
-          {/* Tab 5: Claims Tracker */}
+          {/* Tab 5: Master SKU & Cost Engine */}
+          {activeTab === 'sku-manager' && (
+            <div className="space-y-6 animate-fadeIn">
+              <SkuManager
+                skuMasterList={skuMasterList}
+                onSaveSku={handleSaveSku}
+                onDeleteSku={handleDeleteSku}
+              />
+            </div>
+          )}
+
+          {/* Tab 6: SKU Matrix */}
+          {activeTab === 'skus' && (
+            <div className="space-y-6 animate-fadeIn">
+              <SkuMatrix 
+                skus={skus} 
+                onOpenSkuManager={() => setActiveTab('sku-manager')}
+              />
+            </div>
+          )}
+
+          {/* Tab 7: Claims Tracker */}
           {activeTab === 'claims' && (
             <div className="space-y-6 animate-fadeIn">
               <ClaimsTracker
                 claims={claims}
                 orders={displayedOrders}
                 onAddClaim={handleAddClaim}
+                onUpdateClaimStatus={handleUpdateClaimStatus}
               />
             </div>
           )}

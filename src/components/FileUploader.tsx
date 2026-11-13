@@ -1,17 +1,19 @@
 import React, { useState, useRef } from 'react';
 import { UploadCloud, FileSpreadsheet, CheckCircle2, AlertTriangle, ArrowRight } from 'lucide-react';
 import { parseMarketplaceReport, ParseResult } from '../utils/parser';
-import { OrderItem } from '../types';
+import { OrderItem, SkuMasterItem } from '../types';
 
 interface FileUploaderProps {
   onOrdersImported: (orders: OrderItem[]) => void;
+  skuMasterList: SkuMasterItem[];
 }
 
-export const FileUploader: React.FC<FileUploaderProps> = ({ onOrdersImported }) => {
+export const FileUploader: React.FC<FileUploaderProps> = ({ onOrdersImported, skuMasterList }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [selectedFileName, setSelectedFileName] = useState<string>('');
+  const [manualMarketplaceOverride, setManualMarketplaceOverride] = useState<'auto' | 'meesho' | 'flipkart' | 'amazon'>('auto');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = async (file: File) => {
@@ -19,7 +21,14 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onOrdersImported }) 
     setIsProcessing(true);
     setParseResult(null);
 
-    const result = await parseMarketplaceReport(file);
+    const result = await parseMarketplaceReport(file, skuMasterList);
+    
+    // If user explicitly picked an override
+    if (manualMarketplaceOverride !== 'auto' && result.orders.length > 0) {
+      result.orders = result.orders.map(o => ({ ...o, marketplace: manualMarketplaceOverride }));
+      result.recognizedMarketplace = manualMarketplaceOverride;
+    }
+
     setIsProcessing(false);
     setParseResult(result);
   };
@@ -41,16 +50,26 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onOrdersImported }) 
   };
 
   return (
-    <div className="bg-surface-elevated rounded-card p-6 border border-outline shadow-soft">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+    <div className="bg-surface-elevated rounded-card p-6 border border-outline shadow-soft space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h3 className="text-lg font-bold font-display text-ink">Import Marketplace Reports</h3>
           <p className="text-xs text-ink-muted">
-            Drag and drop settlement files from Meesho, Flipkart, or Amazon (.xlsx, .xls, .csv).
+            Drag and drop settlement or order sheets from <strong>Meesho, Flipkart, or Amazon</strong> (.xlsx, .xls, .csv).
           </p>
         </div>
-        <div className="text-xs text-ink-muted font-medium bg-surface-sunken px-3 py-1.5 rounded-xl border border-outline">
-          🔒 Offline computation: files never leave your PC
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-bold text-ink-muted">Channel Detection:</label>
+          <select
+            value={manualMarketplaceOverride}
+            onChange={(e) => setManualMarketplaceOverride(e.target.value as any)}
+            className="text-xs font-bold bg-surface-sunken border border-outline rounded-xl px-2.5 py-1.5 text-ink focus:outline-none focus:border-sky"
+          >
+            <option value="auto">⚡ Auto-Detect</option>
+            <option value="meesho">Meesho</option>
+            <option value="flipkart">Flipkart</option>
+            <option value="amazon">Amazon</option>
+          </select>
         </div>
       </div>
 
@@ -86,21 +105,21 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onOrdersImported }) 
           <p className="text-base font-bold text-ink">
             {selectedFileName ? selectedFileName : 'Choose a file or drag & drop it here'}
           </p>
-          <p className="text-xs text-ink-muted mt-1">
-            Accepts Meesho Payment Sheet, Flipkart Settlement XLSX, or Amazon Settlement Flatfile
+          <p className="text-xs text-ink-muted mt-1 max-w-lg">
+            Supports Meesho Payment Dashboard Excel (.xlsx with <em>Order Payments</em> tab), Flipkart Settlement MTR, and Amazon Flat Files.
           </p>
         </div>
 
         {isProcessing && (
           <div className="flex items-center gap-2 text-xs font-bold text-sky-deep animate-pulse mt-2">
-            <FileSpreadsheet className="w-4 h-4" /> Parsing local spreadsheet...
+            <FileSpreadsheet className="w-4 h-4" /> Analyzing headers & mapping column structures...
           </div>
         )}
       </div>
 
       {/* Parsing Summary Banner */}
       {parseResult && (
-        <div className="mt-4 p-4 rounded-2xl border transition-all animate-fadeIn flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-surface-sunken border-outline">
+        <div className="p-4 rounded-2xl border transition-all animate-fadeIn flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-surface-sunken border-outline">
           {parseResult.error ? (
             <div className="flex items-center gap-2 text-coral text-sm font-medium">
               <AlertTriangle className="w-5 h-5 shrink-0" />
@@ -114,10 +133,15 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onOrdersImported }) 
                 </div>
                 <div>
                   <h4 className="text-sm font-bold text-ink">
-                    Found {parseResult.orders.length} orders
+                    Successfully mapped {parseResult.orders.length} orders
                   </h4>
                   <p className="text-xs text-ink-muted">
-                    Detected format: <strong className="text-sky-deep uppercase">{parseResult.recognizedMarketplace}</strong>
+                    Channel identified: <strong className="text-sky-deep uppercase">{parseResult.recognizedMarketplace}</strong>
+                    {skuMasterList.length > 0 && (
+                      <span className="ml-2 text-leaf-deep font-medium">
+                        • Linked with {skuMasterList.length} Master SKUs for exact COGS
+                      </span>
+                    )}
                   </p>
                 </div>
               </div>
@@ -126,7 +150,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onOrdersImported }) 
                 onClick={handleApplyImport}
                 className="flex items-center gap-2 bg-leaf-deep text-white px-5 py-2.5 rounded-button text-sm font-bold shadow-soft hover:bg-leaf transition-all active:scale-95"
               >
-                <span>Import to Dashboard</span>
+                <span>Import to Ledger</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </>

@@ -1,18 +1,63 @@
 import React, { useState } from 'react';
 import { SkuMetric } from '../types';
-import { Sparkles, AlertTriangle, ArrowRight } from 'lucide-react';
+import { Sparkles, AlertTriangle, ArrowRight, Download, Package } from 'lucide-react';
 
 interface SkuMatrixProps {
   skus: SkuMetric[];
+  onOpenSkuManager?: () => void;
 }
 
-export const SkuMatrix: React.FC<SkuMatrixProps> = ({ skus }) => {
+export const SkuMatrix: React.FC<SkuMatrixProps> = ({ skus, onOpenSkuManager }) => {
   const [filterType, setFilterType] = useState<'All' | 'Hero' | 'Laggard'>('All');
 
   const filteredSkus = skus.filter((item) => {
     if (filterType === 'All') return true;
     return item.type === filterType;
   });
+
+  const handleExportSkuCsv = () => {
+    if (skus.length === 0) return;
+    const headers = [
+      'SKU',
+      'Title',
+      'Classification',
+      'Total Orders',
+      'Delivered',
+      'RTO',
+      'Customer Returns',
+      'Return Rate %',
+      'Total Revenue',
+      'Total Cost',
+      'Marketplace Deductions',
+      'Net Profit',
+      'Profit Margin %'
+    ];
+
+    const rows = filteredSkus.map(s => [
+      `"${s.sku}"`,
+      `"${s.title.replace(/"/g, '""')}"`,
+      `"${s.type}"`,
+      s.totalOrders,
+      s.deliveredOrders,
+      s.rtoOrders,
+      s.customerReturns,
+      `${s.returnRatePercent}%`,
+      s.totalRevenue,
+      s.totalCost,
+      s.totalMarketplaceFees,
+      s.netProfit,
+      `${s.profitMarginPercent}%`
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `SellWise_SKU_Matrix_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <div className="bg-surface-elevated rounded-card border border-outline shadow-soft overflow-hidden">
@@ -31,22 +76,43 @@ export const SkuMatrix: React.FC<SkuMatrixProps> = ({ skus }) => {
           </p>
         </div>
 
-        <div className="flex items-center bg-surface-sunken p-1 rounded-xl border border-outline">
-          {(['All', 'Hero', 'Laggard'] as const).map((t) => (
+        <div className="flex flex-wrap items-center gap-2">
+          {onOpenSkuManager && (
             <button
-              key={t}
-              onClick={() => setFilterType(t)}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                filterType === t
-                  ? 'bg-surface-elevated text-sky-deep shadow-soft border border-outline'
-                  : 'text-ink-muted hover:text-ink'
-              }`}
+              onClick={onOpenSkuManager}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border border-outline bg-surface-sunken text-ink hover:border-sky transition-all"
             >
-              {t} {t === 'Hero' ? '⭐' : t === 'Laggard' ? '⚠️' : ''}
+              <Package className="w-3.5 h-3.5 text-sky" />
+              <span>Edit Base Costs</span>
             </button>
-          ))}
+          )}
+
+          <button
+            onClick={handleExportSkuCsv}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border border-outline bg-surface-sunken text-ink hover:border-sky transition-all"
+          >
+            <Download className="w-3.5 h-3.5 text-sky" />
+            <span>Export CSV</span>
+          </button>
+
+          <div className="flex items-center bg-surface-sunken p-1 rounded-xl border border-outline">
+            {(['All', 'Hero', 'Laggard'] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setFilterType(t)}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                  filterType === t
+                    ? 'bg-surface-elevated text-sky-deep shadow-soft border border-outline'
+                    : 'text-ink-muted hover:text-ink'
+                }`}
+              >
+                {t} {t === 'Hero' ? '⭐' : t === 'Laggard' ? '⚠️' : ''}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
+
 
       {/* Grid of SKU Cards */}
       {filteredSkus.length === 0 ? (

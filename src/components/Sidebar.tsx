@@ -6,9 +6,11 @@ import {
   FileCheck2,
   Sparkles,
   ShieldCheck,
+  Package,
+  Barcode,
 } from 'lucide-react';
 
-export type TabType = 'overview' | 'import' | 'reconciliation' | 'skus' | 'claims';
+export type TabType = 'overview' | 'import' | 'reconciliation' | 'skus' | 'sku-manager' | 'scanner' | 'claims';
 
 interface SidebarProps {
   activeTab: TabType;
@@ -42,13 +44,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
       badgeType: 'coral',
     },
     {
+      id: 'scanner' as TabType,
+      label: 'Return & Barcode Audit',
+      icon: Barcode,
+    },
+    {
+      id: 'sku-manager' as TabType,
+      label: 'SKU Master & Costs',
+      icon: Package,
+    },
+    {
       id: 'skus' as TabType,
       label: 'SKU Profit Matrix',
       icon: Sparkles,
     },
     {
       id: 'claims' as TabType,
-      label: 'Dispute & Claims',
+      label: 'Dispute & SPF Claims',
       icon: ShieldCheck,
     },
   ];
