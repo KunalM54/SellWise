@@ -11,12 +11,20 @@ import { ClaimsTracker } from './components/ClaimsTracker';
 import { SellWiseDashboard } from './components/SellWiseDashboard';
 import { INITIAL_ORDERS, INITIAL_CLAIMS, INITIAL_SKU_MASTER } from './data/mockData';
 import { OrderItem, SkuMetric, ClaimItem, SkuMasterItem, Marketplace } from './types';
-import { UploadCloud } from 'lucide-react';
+
+const TAB_TITLES: Record<TabType, string> = {
+  'overview': 'Overview & P&L',
+  'import': 'Import Reports',
+  'reconciliation': 'Reconciliation Ledger',
+  'scanner': 'Return & Barcode Audit',
+  'sku-manager': 'SKU Master & Costs',
+  'skus': 'SKU Profit Matrix',
+  'claims': 'Dispute & SPF Claims',
+};
 
 export function App() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [currentMarketplace, setCurrentMarketplace] = useState<Marketplace>('all');
-  const [dateRange, setDateRange] = useState<string>('30D');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // App Master state
@@ -270,7 +278,6 @@ export function App() {
       <Sidebar
         activeTab={activeTab}
         onSelectTab={setActiveTab}
-        ordersCount={orders.length}
         discrepanciesCount={discrepanciesCount}
       />
 
@@ -279,12 +286,9 @@ export function App() {
         
         {/* Top Header */}
         <Header
+          title={TAB_TITLES[activeTab] || 'Overview & P&L'}
           currentMarketplace={currentMarketplace}
           onSelectMarketplace={setCurrentMarketplace}
-          dateRange={dateRange}
-          onSelectDateRange={setDateRange}
-          onRefresh={handleRefresh}
-          isRefreshing={isRefreshing}
           totalOrders={orders.length}
         />
 
@@ -295,43 +299,38 @@ export function App() {
           {activeTab === 'overview' && (
             <div className="space-y-8 animate-fadeIn">
               
-              {/* If no orders loaded, show friendly welcoming onboarder */}
+              {/* If no orders loaded, directly show beautiful file import experience */}
               {displayedOrders.length === 0 ? (
-                <div className="bg-surface-elevated rounded-2xl p-10 border border-outline shadow-soft text-center flex flex-col items-center justify-center gap-4 max-w-2xl mx-auto my-8">
-                  <div className="w-16 h-16 rounded-2xl bg-sky-soft text-sky-deep flex items-center justify-center">
-                    <UploadCloud className="w-8 h-8 stroke-[2.2]" />
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-bold font-display text-ink">
-                      Welcome to SellWise
-                    </h3>
-                    <p className="text-xs text-ink-muted max-w-md mx-auto mt-1 leading-relaxed">
-                      Your intelligent e-commerce reconciliation dashboard. Upload your raw reports from <strong>Meesho, Flipkart, or Amazon</strong> to instantly track real net profit, detect lost returns, and prevent courier weight overcharges.
+                <div className="space-y-6 max-w-4xl mx-auto py-2">
+                  <div className="text-center space-y-1.5 mb-6">
+                    <h2 className="text-2xl font-bold font-display text-ink tracking-tight">
+                      Overview & Profit Reconciliation
+                    </h2>
+                    <p className="text-xs text-ink-muted max-w-lg mx-auto leading-relaxed">
+                      Import your marketplace reports (Orders, Payments/Settlement, or Returns) to immediately calculate true net profits and reconcile payouts.
                     </p>
                   </div>
 
+                  <FileUploader 
+                    onOrdersImported={handleOrdersImported}
+                    skuMasterList={skuMasterList}
+                  />
+
+                  {/* 3 Step Guide Cards */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full text-left my-2 text-xs">
-                    <div className="p-3 rounded-xl bg-surface-sunken border border-outline">
-                      <div className="font-bold text-sky-deep">1. Orders Manifest</div>
-                      <div className="text-[11px] text-ink-muted mt-0.5">Captures prices, quantities & customer locations.</div>
+                    <div className="p-3.5 rounded-2xl bg-surface-elevated border border-outline shadow-soft">
+                      <div className="font-bold text-sky-deep mb-1">1. Orders Manifest</div>
+                      <div className="text-[11px] text-ink-muted leading-relaxed">Captures real selling prices, quantities, SKU names, and customer locations.</div>
                     </div>
-                    <div className="p-3 rounded-xl bg-surface-sunken border border-outline">
-                      <div className="font-bold text-emerald-700">2. Settlement Excel</div>
-                      <div className="text-[11px] text-ink-muted mt-0.5">Matches bank transfers, deposit dates & ad deductions.</div>
+                    <div className="p-3.5 rounded-2xl bg-surface-elevated border border-outline shadow-soft">
+                      <div className="font-bold text-emerald-700 mb-1">2. Settlement Excel</div>
+                      <div className="text-[11px] text-ink-muted leading-relaxed">Matches bank transfers, deposit dates, marketplace fees, and ad deductions.</div>
                     </div>
-                    <div className="p-3 rounded-xl bg-surface-sunken border border-outline">
-                      <div className="font-bold text-purple-700">3. Return Tracking</div>
-                      <div className="text-[11px] text-ink-muted mt-0.5">Tracks AWBs, couriers, and free ₹0 RTOs.</div>
+                    <div className="p-3.5 rounded-2xl bg-surface-elevated border border-outline shadow-soft">
+                      <div className="font-bold text-purple-700 mb-1">3. Return Tracking</div>
+                      <div className="text-[11px] text-ink-muted leading-relaxed">Audits couriers & AWBs, tracking free ₹0 RTOs versus customer returns.</div>
                     </div>
                   </div>
-
-                  <button
-                    onClick={() => setActiveTab('import')}
-                    className="flex items-center gap-2 bg-sky-deep text-white px-6 py-3 rounded-xl text-xs font-bold shadow-soft hover:bg-sky transition-all active:scale-95"
-                  >
-                    <UploadCloud className="w-4 h-4" />
-                    <span>Upload Your First Marketplace File</span>
-                  </button>
                 </div>
               ) : (
                 <>
@@ -341,7 +340,7 @@ export function App() {
                     claims={claims}
                     skuMasterList={skuMasterList}
                     currentMarketplace={currentMarketplace}
-                    storeName="MENDPARA SURESHBHAI (Seller Store)"
+                    storeName="Seller Store"
                     adSpend={adSpend}
                     onOpenImport={() => setActiveTab('import')}
                     onOpenScanner={() => setActiveTab('scanner')}

@@ -15,14 +15,12 @@ export type TabType = 'overview' | 'import' | 'reconciliation' | 'skus' | 'sku-m
 interface SidebarProps {
   activeTab: TabType;
   onSelectTab: (tab: TabType) => void;
-  ordersCount: number;
   discrepanciesCount: number;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
   onSelectTab,
-  ordersCount,
   discrepanciesCount,
 }) => {
   const navItems = [
@@ -121,23 +119,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </button>
             );
           })}
-        </div>
-      </div>
-
-      {/* Bottom Privacy & System Status Widget */}
-      <div className="p-4 border-t border-outline">
-        <div className="p-3.5 rounded-2xl bg-surface-sunken border border-outline flex flex-col gap-2">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-leaf animate-pulse shrink-0" />
-            <span className="text-xs font-bold text-ink">Offline Mode Active</span>
-          </div>
-          <p className="text-[11px] text-ink-muted leading-relaxed">
-            Data is stored and processed locally on your PC. No third-party cloud uploads.
-          </p>
-          <div className="pt-2 border-t border-outline/60 flex items-center justify-between text-[10px] text-ink-muted font-mono">
-            <span>Orders: {ordersCount}</span>
-            <span>v1.0.0</span>
-          </div>
         </div>
       </div>
 
