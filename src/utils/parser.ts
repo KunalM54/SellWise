@@ -7,6 +7,9 @@ export interface ParseResult {
   totalRows: number;
   recognizedMarketplace: 'meesho' | 'flipkart' | 'amazon' | 'unknown';
   reportType?: 'single_report' | 'two_way_settlement' | 'order_report';
+  detectedFileType?: 'orders' | 'payments' | 'returns' | 'generic';
+  adCostTotal?: number;
+  fileSummaryMessage?: string;
   error?: string;
 }
 
@@ -39,14 +42,17 @@ export async function parseMarketplaceReport(file: File, skuMaster: SkuMasterIte
 
 async function parseExcelReport(file: File, skuMaster: SkuMasterItem[]): Promise<ParseResult> {
   try {
-    // Attempt to read all sheets to find 'Order Payments' (Meesho) or fall back to default sheet
     let targetRows: unknown[][] | null = null;
+    let allSheets: Array<{ sheet: string; data: unknown[][] }> = [];
     try {
-      const allSheets = await readXlsxFile(file);
-      if (Array.isArray(allSheets) && allSheets.length > 0) {
+      // Read all sheets with readXlsxFile
+      const sheetsResult = await readXlsxFile(file);
+      if (Array.isArray(sheetsResult) && sheetsResult.length > 0) {
+        allSheets = sheetsResult as Array<{ sheet: string; data: unknown[][] }>;
         const found = allSheets.find(s => 
           s.sheet && (
             s.sheet.toLowerCase().includes('order payments') ||
+            s.sheet.toLowerCase().includes('order payment') ||
             s.sheet.toLowerCase().includes('payments') ||
             s.sheet.toLowerCase().includes('settlement')
           )
@@ -54,7 +60,7 @@ async function parseExcelReport(file: File, skuMaster: SkuMasterItem[]): Promise
         targetRows = (found ? found.data : allSheets[0].data) as unknown[][];
       }
     } catch {
-      // If reading all sheets fails, fall back to readSheet
+      // Fallback
       const sheetData = await readSheet(file);
       targetRows = sheetData as unknown[][];
     }
@@ -63,13 +69,39 @@ async function parseExcelReport(file: File, skuMaster: SkuMasterItem[]): Promise
       return { orders: [], totalRows: 0, recognizedMarketplace: 'unknown', error: 'Empty or invalid spreadsheet' };
     }
 
-    // Find the real header row (in Meesho files, row 0 or 1 might be title or disclaimer)
+    // Capture Ad Cost if Ads Cost sheet is present in the Excel
+    let adCostTotal = 0;
+    const adsSheet = allSheets.find(s => 
+      s.sheet && (
+        s.sheet.toLowerCase().includes('ads cost') || 
+        s.sheet.toLowerCase().includes('ad cost') || 
+        s.sheet.toLowerCase().trim() === 'ads'
+      )
+    );
+    if (adsSheet && adsSheet.data && adsSheet.data.length > 2) {
+      const adsHeaders = (adsSheet.data[1] || adsSheet.data[0] || []).map(h => String(h || '').toLowerCase());
+      const costIdx = adsHeaders.findIndex(h => h.includes('total ads cost') || h.includes('ad cost incl'));
+      if (costIdx >= 0) {
+        for (let r = 2; r < adsSheet.data.length; r++) {
+          const val = adsSheet.data[r][costIdx];
+          if (val !== null && val !== undefined && val !== '') {
+            const num = Math.abs(Number(String(val).replace(/[^0-9.-]/g, '')) || 0);
+            adCostTotal += num;
+          }
+        }
+      }
+    }
+
+    // Find the real header row (scan up to row 15)
     let headerRowIndex = 0;
-    for (let r = 0; r < Math.min(targetRows.length, 6); r++) {
-      const rowStrings = (targetRows[r] as unknown as (string | number | null)[]).map(c => String(c || '').toLowerCase());
+    for (let r = 0; r < Math.min(targetRows.length, 15); r++) {
+      const rowStrings = (targetRows[r] as unknown as (string | number | null)[]).map(c => String(c || '').toLowerCase().trim());
       const hasKeywords = rowStrings.some(c => 
-        c.includes('sub-order') || c.includes('sub order') || c.includes('order id') || c.includes('order no') ||
-        c.includes('fsn') || c.includes('asin') || c.includes('sku') || c.includes('settlement') || c.includes('payout')
+        c.includes('sub-order') || c.includes('sub order') || c.includes('suborder') ||
+        c.includes('reason for credit entry') || c.includes('order id') || c.includes('order no') ||
+        c.includes('order number') || c.includes('type of return') || c.includes('courier partner') ||
+        c.includes('supplier sku') || c.includes('supplier listed price') || c.includes('fsn') ||
+        c.includes('asin') || c.includes('sku') || c.includes('settlement') || c.includes('payout')
       );
       if (hasKeywords) {
         headerRowIndex = r;
@@ -79,7 +111,11 @@ async function parseExcelReport(file: File, skuMaster: SkuMasterItem[]): Promise
 
     const headers = (targetRows[headerRowIndex] as unknown as (string | number | null)[]).map(h => String(h || '').trim().toLowerCase());
     const dataRows = targetRows.slice(headerRowIndex + 1);
-    return mapRowsToOrders(headers, dataRows as unknown as (string | number | null)[][], file.name, skuMaster);
+    const result = mapRowsToOrders(headers, dataRows as unknown as (string | number | null)[][], file.name, skuMaster);
+    if (adCostTotal > 0) {
+      result.adCostTotal = Math.round(adCostTotal * 100) / 100;
+    }
+    return result;
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Excel parsing failure';
     return { orders: [], totalRows: 0, recognizedMarketplace: 'unknown', error: message };
@@ -96,13 +132,16 @@ async function parseCsvReport(file: File, skuMaster: SkuMasterItem[]): Promise<P
           return;
         }
 
-        // Detect real header row
+        // Detect real header row (scan up to row 15)
         let headerRowIndex = 0;
-        for (let r = 0; r < Math.min(results.data.length, 6); r++) {
-          const rowStrings = results.data[r].map(c => String(c || '').toLowerCase());
+        for (let r = 0; r < Math.min(results.data.length, 15); r++) {
+          const rowStrings = results.data[r].map(c => String(c || '').toLowerCase().trim());
           const hasKeywords = rowStrings.some(c => 
-            c.includes('sub-order') || c.includes('sub order') || c.includes('order id') || c.includes('order no') ||
-            c.includes('fsn') || c.includes('asin') || c.includes('sku') || c.includes('settlement') || c.includes('payout')
+            c.includes('sub-order') || c.includes('sub order') || c.includes('suborder') ||
+            c.includes('reason for credit entry') || c.includes('order id') || c.includes('order no') ||
+            c.includes('order number') || c.includes('type of return') || c.includes('courier partner') ||
+            c.includes('supplier sku') || c.includes('supplier listed price') || c.includes('fsn') ||
+            c.includes('asin') || c.includes('sku') || c.includes('settlement') || c.includes('payout')
           );
           if (hasKeywords) {
             headerRowIndex = r;
@@ -312,14 +351,19 @@ function mapRowsToOrders(
   
   const hasMeeshoIndicators = 
     fName.includes('meesho') ||
+    fName.includes('intransit') ||
     headers.some(h => 
       h.includes('sub-order') || 
       h.includes('sub order') || 
-      h.includes('sub_order') ||
+      h.includes('suborder') ||
+      h.includes('reason for credit entry') ||
       h.includes('meesho') || 
       h.includes('supplier sku') ||
+      h.includes('supplier listed price') ||
       h.includes('live order status') ||
-      h.includes('final settlement amount')
+      h.includes('final settlement amount') ||
+      h.includes('packet id') ||
+      h.includes('type of return')
     );
 
   const hasFlipkartIndicators = 
@@ -353,14 +397,45 @@ function mapRowsToOrders(
     marketplace = 'meesho';
   }
 
+  // 2. Identify exact file type (Orders, Payments/Settlement, Returns/Tracking)
+  let detectedFileType: 'orders' | 'payments' | 'returns' | 'generic' = 'generic';
+
+  const isReturnsFile = headers.some(h => 
+    h.includes('type of return') || 
+    h.includes('suborder number') || 
+    h.includes('return reason') || 
+    (h.includes('courier partner') && h.includes('awb number'))
+  );
+
+  const isPaymentsFile = headers.some(h => 
+    h.includes('final settlement amount') || 
+    h.includes('settled amount') || 
+    h.includes('net payout') || 
+    (h.includes('total sale amount') && h.includes('payment date')) ||
+    h.includes('bank transfer')
+  );
+
+  const isOrdersFile = !isReturnsFile && !isPaymentsFile && headers.some(h => 
+    h.includes('reason for credit entry') || 
+    h.includes('supplier listed price') || 
+    h.includes('supplier discounted price') || 
+    h.includes('customer state') ||
+    h.includes('packet id') ||
+    h.includes('order source')
+  );
+
+  if (isReturnsFile) detectedFileType = 'returns';
+  else if (isPaymentsFile) detectedFileType = 'payments';
+  else if (isOrdersFile) detectedFileType = 'orders';
+
   const findIdx = (keywords: string[]) => {
     return headers.findIndex(h => keywords.some(k => h.includes(k)));
   };
 
   // Expanded indices covering real marketplace column variations
   const orderIdIdx = findIdx([
-    'sub-order no', 'sub order no', 'sub-order id', 'sub order id', 'sub_order_no',
-    'sub order number', 'sub-order number', 'order id', 'order-id', 'order number', 'order_id'
+    'sub order no', 'sub-order no', 'suborder number', 'suborder no', 'sub_order_no',
+    'sub order number', 'sub-order number', 'sub order id', 'sub-order id', 'order id', 'order-id', 'order number', 'order_id'
   ]);
   
   const skuIdx = findIdx([
@@ -370,13 +445,14 @@ function mapRowsToOrders(
   const titleIdx = findIdx(['product name', 'title', 'item description', 'description']);
   
   const salePriceIdx = findIdx([
+    'supplier listed price', 'supplier discounted price', 'listing price', 'product price',
     'total sale amount', 'total sale', 'sale amount', 'customer paid', 'selling price', 
-    'listing price', 'order amount', 'total', 'item price'
+    'order amount', 'total price', 'unit price', 'item price'
   ]);
   
   const payoutIdx = findIdx([
-    'final settlement amount', 'settled amount', 'net payout', 'bank transfer', 
-    'payout amount', 'final settlement', 'net amount', 'bank transfer amount'
+    'final settlement amount', 'settled amount', 'net payout', 'bank transfer amount', 'bank transfer', 
+    'payout amount', 'final settlement', 'net amount'
   ]);
   
   const commissionIdx = findIdx([
@@ -392,7 +468,7 @@ function mapRowsToOrders(
   ]);
   
   const statusIdx = findIdx([
-    'live order status', 'order status', 'delivery status', 'status', 'item status', 'return type'
+    'reason for credit entry', 'live order status', 'order status', 'delivery status', 'status', 'item status', 'type of return'
   ]);
 
   const billedWeightIdx = findIdx([
@@ -400,11 +476,15 @@ function mapRowsToOrders(
   ]);
 
   const bankUtrIdx = findIdx([
-    'bank utr', 'utr', 'neft', 'reference no', 'transaction id'
+    'transaction id', 'bank utr', 'utr', 'neft', 'reference no'
   ]);
 
   const dateIdx = findIdx([
-    'order date', 'order placed date', 'payment date', 'settlement date', 'date'
+    'order date', 'order placed date', 'dispatch date', 'payment date', 'settlement date', 'date'
+  ]);
+
+  const paymentDateIdx = findIdx([
+    'payment date', 'settlement date', 'bank deposit date'
   ]);
 
   // Comprehensive city and location column matchers for Meesho/Flipkart/Amazon
@@ -432,16 +512,27 @@ function mapRowsToOrders(
 
   const awbIdx = findIdx([
     'awb number', 'awb no', 'awb', 'waybill number', 'waybill no', 'waybill',
-    'tracking id', 'tracking number', 'tracking no'
+    'tracking id', 'tracking number', 'packet id', 'tracking no'
   ]);
 
   const courierIdx = findIdx([
-    'courier', 'logistics partner', 'courier partner', 'carrier', 'courier name',
-    'delivery partner', '3pl'
+    'courier partner', 'logistics partner', 'courier name', 'delivery partner', 'courier', 'carrier', '3pl'
+  ]);
+
+  const returnTypeIdx = findIdx([
+    'type of return', 'return type', 'sub type'
+  ]);
+
+  const returnPriceTypeIdx = findIdx([
+    'return price type', 'price type'
+  ]);
+
+  const returnReasonIdx = findIdx([
+    'detailed return reason', 'return reason', 'reason'
   ]);
 
   const scanDateIdx = findIdx([
-    'receive scan time', 'scan time', 'scan date', 'return date', 'return creation date', 'delivery date'
+    'return created date', 'receive scan time', 'scan time', 'scan date', 'return date', 'delivery date'
   ]);
 
   const qtyIdx = findIdx([
@@ -452,50 +543,149 @@ function mapRowsToOrders(
 
   rows.forEach((row, i) => {
     const rawOrderId = orderIdIdx >= 0 ? String(row[orderIdIdx] || '').trim() : '';
-    // Skip empty lines or total summary rows at bottom of spreadsheets
-    if (!rawOrderId || rawOrderId.toLowerCase() === 'total' || rawOrderId.toLowerCase().startsWith('grand total')) {
+    // Skip empty lines, formulas, or total summary rows at bottom of spreadsheets
+    if (
+      !rawOrderId || 
+      rawOrderId.toLowerCase() === 'total' || 
+      rawOrderId.toLowerCase().startsWith('grand total') ||
+      rawOrderId.includes('(b + c') ||
+      rawOrderId.toLowerCase().includes('track which')
+    ) {
       return;
     }
 
     const sku = skuIdx >= 0 ? String(row[skuIdx] || 'UNKNOWN-SKU').trim() : 'GENERAL-SKU';
     const title = titleIdx >= 0 ? String(row[titleIdx] || sku).trim() : sku;
     
-    // Look up in SKU Master if available, otherwise estimate
+    // Look up in SKU Master if available
     const masterItem = skuMaster.find(m => m.sku.toLowerCase() === sku.toLowerCase());
     
-    const salePrice = salePriceIdx >= 0 ? Math.abs(Number(row[salePriceIdx])) || 499 : 499;
-    const actualPayout = payoutIdx >= 0 ? Number(row[payoutIdx]) || (salePrice * 0.75) : (salePrice * 0.75);
-    const commFee = commissionIdx >= 0 ? Math.abs(Number(row[commissionIdx])) || 0 : (marketplace === 'meesho' ? 0 : salePrice * 0.08);
-    const shipFee = shippingIdx >= 0 ? Math.abs(Number(row[shippingIdx])) || 70 : 70;
-    const revShipFee = reverseShippingIdx >= 0 ? Math.abs(Number(row[reverseShippingIdx])) || 0 : 0;
-    const quantity = qtyIdx >= 0 ? Math.max(1, Number(row[qtyIdx]) || 1) : 1;
+    // Real Selling Price from file
+    let salePrice = 0;
+    if (salePriceIdx >= 0 && row[salePriceIdx] !== null && row[salePriceIdx] !== '') {
+      const pStr = String(row[salePriceIdx]).replace(/[^0-9.-]/g, '');
+      const pNum = Number(pStr);
+      if (!isNaN(pNum) && pNum > 0) {
+        salePrice = Math.abs(pNum);
+      }
+    }
+    if (salePrice === 0 && masterItem?.costPrice) {
+      salePrice = masterItem.costPrice * 1.5;
+    }
+
+    // Real Payout extraction
+    let actualPayout = 0;
+    if (detectedFileType === 'payments' && payoutIdx >= 0 && row[payoutIdx] !== null && row[payoutIdx] !== '') {
+      const payStr = String(row[payoutIdx]).replace(/[^0-9.-]/g, '');
+      const payNum = Number(payStr);
+      actualPayout = isNaN(payNum) ? 0 : Math.round(payNum * 100) / 100;
+    } else if (detectedFileType === 'orders' || detectedFileType === 'returns') {
+      // In Orders and Returns reports, payment has NOT arrived yet!
+      actualPayout = 0;
+    } else if (payoutIdx >= 0 && row[payoutIdx] !== null && row[payoutIdx] !== '') {
+      const payStr = String(row[payoutIdx]).replace(/[^0-9.-]/g, '');
+      const payNum = Number(payStr);
+      actualPayout = isNaN(payNum) ? 0 : Math.round(payNum * 100) / 100;
+    }
+
+    // Shipping & Fees
+    let shipFee = 0;
+    if (shippingIdx >= 0 && row[shippingIdx] !== null && row[shippingIdx] !== '') {
+      shipFee = Math.abs(Number(String(row[shippingIdx]).replace(/[^0-9.-]/g, '')) || 0);
+    } else {
+      shipFee = detectedFileType === 'orders' ? 70 : 0;
+    }
+
+    let revShipFee = 0;
+    if (reverseShippingIdx >= 0 && row[reverseShippingIdx] !== null && row[reverseShippingIdx] !== '') {
+      revShipFee = Math.abs(Number(String(row[reverseShippingIdx]).replace(/[^0-9.-]/g, '')) || 0);
+    }
+
+    const commFee = commissionIdx >= 0 && row[commissionIdx] 
+      ? Math.abs(Number(String(row[commissionIdx]).replace(/[^0-9.-]/g, '')) || 0)
+      : (marketplace === 'meesho' ? 0 : salePrice * 0.08);
+
+    const quantity = qtyIdx >= 0 ? Math.max(1, Number(String(row[qtyIdx]).replace(/[^0-9]/g, '')) || 1) : 1;
     
-    const rawStatus = statusIdx >= 0 ? String(row[statusIdx] || '').toLowerCase() : 'delivered';
+    // Status mapping with exact support for all Meesho lifecycle states
+    const rawStatus = (statusIdx >= 0 ? String(row[statusIdx] || '') : '').toLowerCase().trim();
 
     let orderStatus: OrderItem['status'] = 'Delivered';
     let returnType: OrderItem['returnType'] = undefined;
 
-    if (rawStatus.includes('customer return') || (rawStatus.includes('return') && !rawStatus.includes('rto'))) {
-      orderStatus = 'Customer Return';
-      returnType = 'CUSTOMER RETURN';
-    } else if (rawStatus.includes('rto') || rawStatus.includes('return to origin')) {
+    if (rawStatus.includes('ready_to_ship') || rawStatus.includes('ready to ship') || rawStatus === 'pending') {
+      orderStatus = 'Ready To Ship';
+    } else if (rawStatus.includes('hold') || rawStatus.includes('on_hold')) {
+      orderStatus = 'Hold';
+    } else if (rawStatus.includes('shipped') || rawStatus.includes('in-transit') || rawStatus.includes('in transit') || rawStatus.includes('dispatched')) {
+      orderStatus = 'Shipped';
+    } else if (rawStatus.includes('picked up')) {
+      orderStatus = detectedFileType === 'returns' ? 'Return In Transit' : 'Shipped';
+    } else if (rawStatus.includes('out for delivery') || rawStatus.includes('out_for_delivery')) {
+      orderStatus = 'Out For Delivery';
+    } else if (rawStatus.includes('returned') || rawStatus.includes('return received') || rawStatus.includes('return_delivered')) {
+      orderStatus = 'Return Received';
+      returnType = rawStatus.includes('rto') ? 'RTO' : 'CUSTOMER RETURN';
+    } else if (rawStatus.includes('rto') || rawStatus.includes('return to origin') || rawStatus.includes('courier return')) {
       orderStatus = 'RTO';
       returnType = 'RTO';
-    } else if (rawStatus.includes('transit') || rawStatus.includes('shipped') || rawStatus.includes('in-transit')) {
-      orderStatus = 'Shipped';
+    } else if (rawStatus.includes('customer return') || rawStatus.includes('return') || rawStatus.includes('first_ret')) {
+      orderStatus = 'Customer Return';
+      returnType = 'CUSTOMER RETURN';
     } else if (rawStatus.includes('cancel')) {
       orderStatus = 'Cancelled';
       returnType = 'CANCELLED';
-    } else {
+    } else if (rawStatus.includes('delivered')) {
       orderStatus = 'Delivered';
       returnType = 'DELIVERED';
+    } else {
+      orderStatus = detectedFileType === 'orders' ? 'Ready To Ship' : 'Delivered';
+    }
+
+    if (returnTypeIdx >= 0 && row[returnTypeIdx]) {
+      const rt = String(row[returnTypeIdx]).toLowerCase();
+      if (rt.includes('rto') || rt.includes('courier return')) {
+        returnType = 'RTO';
+        if (orderStatus !== 'Return Received') orderStatus = 'RTO';
+      } else if (rt.includes('customer') || rt.includes('first_ret')) {
+        returnType = 'CUSTOMER RETURN';
+        if (orderStatus !== 'Return Received') orderStatus = 'Customer Return';
+      }
+    }
+
+    // Inspect Return Price Type from Meesho Return Tracking Sheet
+    let rawReturnPriceType = returnPriceTypeIdx >= 0 && row[returnPriceTypeIdx]
+      ? String(row[returnPriceTypeIdx]).trim()
+      : '';
+    if (rawReturnPriceType.toLowerCase() === 'na' || rawReturnPriceType.toLowerCase() === 'null') {
+      rawReturnPriceType = '';
+    }
+
+    // In Meesho: If Return Price Type is blank/empty, it is a Courier Return (RTO) with ₹0 Return Shipping Fee!
+    // Never assume "Meesho Price" when the cell is empty/blank!
+    const isRto = 
+      orderStatus === 'RTO' || 
+      returnType === 'RTO' || 
+      (detectedFileType === 'returns' && !rawReturnPriceType);
+
+    let returnPriceType = rawReturnPriceType;
+    if (isRto) {
+      returnType = 'RTO';
+      if (orderStatus !== 'Return Received') orderStatus = 'RTO';
+      returnPriceType = '₹0 (Courier Return RTO)';
+      // RTO Courier Return in Meesho is 100% free return (Return Shipping Fee = 0)
+      revShipFee = 0;
+      shipFee = 0;
+    } else if (rawReturnPriceType.toLowerCase().includes('meesho price') || orderStatus === 'Customer Return' || returnType === 'CUSTOMER RETURN') {
+      returnType = 'CUSTOMER RETURN';
+      if (orderStatus !== 'Return Received') orderStatus = 'Customer Return';
+      returnPriceType = 'Meesho Price (Customer Return)';
     }
 
     // Weight auditing
     let billedWeightGrams = 0;
     if (billedWeightIdx >= 0 && row[billedWeightIdx]) {
-      const rawWeight = Number(row[billedWeightIdx]) || 0;
-      // If <= 10, it's likely in KG, convert to grams
+      const rawWeight = Number(String(row[billedWeightIdx]).replace(/[^0-9.]/g, '')) || 0;
       billedWeightGrams = rawWeight > 0 && rawWeight < 15 ? Math.round(rawWeight * 1000) : Math.round(rawWeight);
     }
     
@@ -506,34 +696,62 @@ function mapRowsToOrders(
     const packagingCost = masterItem ? masterItem.packagingCost : 15;
     const estimatedGst = Math.round(salePrice * 0.05);
     
-    // Reverse shipping is applied for RTO / returns
-    const effectiveReverseShipping = revShipFee > 0 ? revShipFee : (orderStatus === 'RTO' ? 70 : 0);
+    // For RTO courier return, Meesho charges ₹0 return shipping fee!
+    // Reverse shipping is ONLY applicable for Customer Returns (or as billed in payment sheet)
+    const effectiveReverseShipping = isRto ? 0 : (revShipFee > 0 ? revShipFee : (orderStatus === 'Customer Return' ? 70 : 0));
 
     const expectedPayout = orderStatus === 'Delivered' 
       ? Math.max(0, Math.round(salePrice - commFee - shipFee - estimatedGst))
       : 0;
 
-    const discrepancy = expectedPayout > actualPayout ? Math.round((expectedPayout - actualPayout) * 100) / 100 : 0;
-    const isDiscrepant = discrepancy > 20 || weightDiscrepancy;
+    const discrepancy = (expectedPayout > actualPayout && actualPayout > 0) 
+      ? Math.round((expectedPayout - actualPayout) * 100) / 100 
+      : 0;
+    const isDiscrepant = (discrepancy > 20 && actualPayout > 0) || weightDiscrepancy;
 
     let discrepancyReason: string | undefined = undefined;
-    if (weightDiscrepancy) {
-      discrepancyReason = `Weight Overcharged: Courier billed ${billedWeightGrams}g vs actual ${actualWeightGrams}g`;
-    } else if (isDiscrepant) {
-      discrepancyReason = 'Settlement sheet payout is lower than marketplace contracted slab';
+    if (returnReasonIdx >= 0 && row[returnReasonIdx]) {
+      const rReason = String(row[returnReasonIdx]).trim();
+      if (rReason && rReason !== 'NA' && rReason !== '-') {
+        discrepancyReason = rReason;
+      }
+    }
+    if (!discrepancyReason) {
+      if (weightDiscrepancy) {
+        discrepancyReason = `Weight Overcharged: Courier billed ${billedWeightGrams}g vs actual ${actualWeightGrams}g`;
+      } else if (isDiscrepant) {
+        discrepancyReason = 'Settlement sheet payout is lower than marketplace contracted slab';
+      }
+    }
+
+    // Reconciliation status
+    let reconciliationStatus: OrderItem['reconciliationStatus'] = 'Pending';
+    if (detectedFileType === 'payments') {
+      reconciliationStatus = isDiscrepant ? 'Discrepancy' : 'Settled';
+    } else if (actualPayout !== 0) {
+      reconciliationStatus = isDiscrepant ? 'Discrepancy' : 'Settled';
+    } else {
+      reconciliationStatus = 'Pending';
     }
 
     const bankUtr = bankUtrIdx >= 0 && row[bankUtrIdx] ? String(row[bankUtrIdx]).trim() : undefined;
-    const orderDate = dateIdx >= 0 && row[dateIdx] ? String(row[dateIdx]).split('T')[0] : new Date().toISOString().split('T')[0];
+    const orderDate = dateIdx >= 0 && row[dateIdx] ? String(row[dateIdx]).split('T')[0].split(' ')[0] : new Date().toISOString().split('T')[0];
 
-    // ==========================================
-    // ACCURATE CUSTOMER CITY & STATE RESOLUTION
-    // (Fixes the issue where all Meesho orders defaulted to "New Delhi")
-    // ==========================================
+    // Bank deposit date
+    let bankDepositDate: string | undefined = undefined;
+    if (paymentDateIdx >= 0 && row[paymentDateIdx]) {
+      const pDate = String(row[paymentDateIdx]).trim().split('T')[0].split(' ')[0];
+      if (pDate && pDate.toLowerCase() !== 'unscheduled' && pDate !== '-') {
+        bankDepositDate = pDate;
+      }
+    } else if (bankUtr) {
+      bankDepositDate = orderDate;
+    }
+
+    // Location resolution
     let resolvedCity = '';
     let resolvedState = '';
 
-    // Step 1: Check dedicated State column first
     if (stateIdx >= 0 && row[stateIdx]) {
       const rawState = String(row[stateIdx]).trim();
       if (rawState && rawState.toLowerCase() !== 'null' && rawState.toLowerCase() !== 'undefined' && rawState !== '-') {
@@ -541,7 +759,6 @@ function mapRowsToOrders(
       }
     }
 
-    // Step 2: Check direct City column
     if (cityIdx >= 0 && row[cityIdx]) {
       const rawCity = String(row[cityIdx]).trim();
       if (rawCity && rawCity.toLowerCase() !== 'null' && rawCity.toLowerCase() !== 'undefined' && rawCity !== '-') {
@@ -549,7 +766,6 @@ function mapRowsToOrders(
       }
     }
 
-    // Step 3: Check dedicated Pincode column
     if (pincodeIdx >= 0 && row[pincodeIdx]) {
       const rawPin = String(row[pincodeIdx]).trim();
       const pinResult = resolveFromPincode(rawPin);
@@ -559,7 +775,6 @@ function mapRowsToOrders(
       }
     }
 
-    // Step 4: If city is still not found, check Address column
     if (!resolvedCity && addressIdx >= 0 && row[addressIdx]) {
       const rawAddr = String(row[addressIdx]).trim();
       const extracted = extractCityFromAddress(rawAddr);
@@ -568,15 +783,12 @@ function mapRowsToOrders(
       }
     }
 
-    // Step 5: If city is STILL empty but State was found:
-    // DO NOT hardcode "New Delhi" unless the state actually is Delhi!
     if (!resolvedCity) {
       if (resolvedState) {
         if (resolvedState.toLowerCase().includes('delhi')) {
           resolvedCity = 'New Delhi';
           resolvedState = 'Delhi';
         } else {
-          // Use the real state name so the seller knows the exact customer destination state
           resolvedCity = resolvedState;
         }
       } else {
@@ -593,12 +805,10 @@ function mapRowsToOrders(
       }
     }
 
-    // Courier, AWB, Scan dates from Meesho/Courier sheets
     const awbNumber = awbIdx >= 0 && row[awbIdx] ? String(row[awbIdx]).trim() : undefined;
     const courier = courierIdx >= 0 && row[courierIdx] ? String(row[courierIdx]).trim() : undefined;
     const scanDate = scanDateIdx >= 0 && row[scanDateIdx] ? String(row[scanDateIdx]).trim() : undefined;
 
-    // Calculate days in transit if dates are present
     let daysInTransit: number | undefined = undefined;
     if (scanDate && orderDate) {
       try {
@@ -608,7 +818,7 @@ function mapRowsToOrders(
           daysInTransit = Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
         }
       } catch {
-        // ignore date math failure
+        // ignore
       }
     }
 
@@ -631,9 +841,9 @@ function mapRowsToOrders(
       reverseShippingFee: Math.round(effectiveReverseShipping),
       taxesAndGst: estimatedGst,
       expectedPayout,
-      actualPayout: Math.round(actualPayout),
+      actualPayout: Math.round(actualPayout * 100) / 100,
       status: orderStatus,
-      reconciliationStatus: isDiscrepant ? 'Discrepancy' : 'Settled',
+      reconciliationStatus,
       discrepancyAmount: discrepancy,
       discrepancyReason,
       claimEligible: isDiscrepant || orderStatus === 'Customer Return' || weightDiscrepancy,
@@ -642,10 +852,11 @@ function mapRowsToOrders(
       actualWeightGrams: actualWeightGrams > 0 ? actualWeightGrams : undefined,
       weightDiscrepancy,
       bankUtr,
-      bankDepositDate: bankUtr ? orderDate : undefined,
+      bankDepositDate,
       awbNumber,
       courier,
       returnType,
+      returnPriceType,
       scanDate,
       daysInTransit,
     });
@@ -655,6 +866,8 @@ function mapRowsToOrders(
     orders: parsedOrders,
     totalRows: rows.length,
     recognizedMarketplace: marketplace,
-    reportType: 'single_report'
+    detectedFileType,
+    reportType: isPaymentsFile ? 'two_way_settlement' : (isOrdersFile ? 'order_report' : 'single_report'),
+    fileSummaryMessage: `Mapped ${parsedOrders.length} records [Type: ${detectedFileType.toUpperCase()}]`
   };
 }

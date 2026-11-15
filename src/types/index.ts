@@ -8,6 +8,7 @@ export type OrderStatus =
   | 'Customer Return' 
   | 'Cancelled'
   | 'Ready To Ship'
+  | 'Hold'
   | 'Out For Delivery'
   | 'Return Received'
   | 'Return Not Received'
@@ -57,6 +58,7 @@ export interface OrderItem {
   awbNumber?: string;
   courier?: string;
   returnType?: 'RTO' | 'CUSTOMER RETURN' | 'DELIVERED' | 'CANCELLED';
+  returnPriceType?: string;
   scanDate?: string;
   daysInTransit?: number;
   // Weight & Bank reconciliation metadata

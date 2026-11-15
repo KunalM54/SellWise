@@ -4,7 +4,7 @@ import { parseMarketplaceReport, ParseResult } from '../utils/parser';
 import { OrderItem, SkuMasterItem } from '../types';
 
 interface FileUploaderProps {
-  onOrdersImported: (orders: OrderItem[]) => void;
+  onOrdersImported: (orders: OrderItem[], adCostTotal?: number) => void;
   skuMasterList: SkuMasterItem[];
 }
 
@@ -43,7 +43,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onOrdersImported, sk
 
   const handleApplyImport = () => {
     if (parseResult && parseResult.orders.length > 0) {
-      onOrdersImported(parseResult.orders);
+      onOrdersImported(parseResult.orders, parseResult.adCostTotal);
       setParseResult(null);
       setSelectedFileName('');
     }
@@ -55,7 +55,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onOrdersImported, sk
         <div>
           <h3 className="text-lg font-bold font-display text-ink">Import Marketplace Reports</h3>
           <p className="text-xs text-ink-muted">
-            Drag and drop settlement or order sheets from <strong>Meesho, Flipkart, or Amazon</strong> (.xlsx, .xls, .csv).
+            Drag and drop <strong>Orders, Payments/Settlement, or Return Tracking</strong> sheets from Meesho, Flipkart, or Amazon (.xlsx, .xls, .csv).
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -106,7 +106,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onOrdersImported, sk
             {selectedFileName ? selectedFileName : 'Choose a file or drag & drop it here'}
           </p>
           <p className="text-xs text-ink-muted mt-1 max-w-lg">
-            Supports Meesho Payment Dashboard Excel (.xlsx with <em>Order Payments</em> tab), Flipkart Settlement MTR, and Amazon Flat Files.
+            Supports Meesho Orders Manifest CSV, In-Transit/Return Tracking CSV, and Multi-sheet Settlement Excel (with <em>Order Payments</em> and <em>Ads Cost</em> tabs).
           </p>
         </div>
 
@@ -133,16 +133,35 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onOrdersImported, sk
                 </div>
                 <div>
                   <h4 className="text-sm font-bold text-ink">
-                    Successfully mapped {parseResult.orders.length} orders
+                    Successfully mapped {parseResult.orders.length} records
                   </h4>
-                  <p className="text-xs text-ink-muted">
-                    Channel identified: <strong className="text-sky-deep uppercase">{parseResult.recognizedMarketplace}</strong>
-                    {skuMasterList.length > 0 && (
-                      <span className="ml-2 text-leaf-deep font-medium">
-                        • Linked with {skuMasterList.length} Master SKUs for exact COGS
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-ink-muted mt-0.5">
+                    <span>Channel: <strong className="text-sky-deep uppercase">{parseResult.recognizedMarketplace}</strong></span>
+                    {parseResult.detectedFileType && (
+                      <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                        parseResult.detectedFileType === 'payments' 
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : parseResult.detectedFileType === 'returns'
+                          ? 'bg-purple-100 text-purple-800'
+                          : 'bg-blue-100 text-blue-800'
+                      }`}>
+                        {parseResult.detectedFileType === 'payments' && '💳 SETTLEMENT FILE'}
+                        {parseResult.detectedFileType === 'orders' && '📦 ORDERS MANIFEST'}
+                        {parseResult.detectedFileType === 'returns' && '🔄 RETURN TRACKING'}
+                        {parseResult.detectedFileType === 'generic' && '📄 REPORT'}
                       </span>
                     )}
-                  </p>
+                    {parseResult.adCostTotal && parseResult.adCostTotal > 0 && (
+                      <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded text-[11px] font-bold">
+                        ₹{parseResult.adCostTotal.toFixed(2)} Ads Cost Captured
+                      </span>
+                    )}
+                    {skuMasterList.length > 0 && (
+                      <span className="text-leaf-deep font-medium">
+                        • {skuMasterList.length} Master SKUs Linked
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 

@@ -61,36 +61,30 @@ export const OrderMantraDetailModal: React.FC<OrderMantraDetailModalProps> = ({
       case 'cancelled':
         return orders.filter(o => o.status === 'Cancelled');
       case 'ready_to_ship':
-        return orders.filter(o => o.status === 'Ready To Ship');
+        return orders.filter(o => o.status === 'Ready To Ship' || o.status === 'Hold');
       case 'shipped':
         return orders.filter(o => o.status === 'Shipped');
       case 'return_in_transit':
-        return orders.filter(o => o.status === 'Return In Transit' || o.status === 'In-Transit');
+        return orders.filter(o => o.status === 'Return In Transit' || o.status === 'In-Transit' || (o.status === 'RTO' && !o.scanDate));
       case 'out_for_delivery':
         return orders.filter(o => o.status === 'Out For Delivery');
       case 'return_received':
-        return orders.filter(o => 
-          o.status === 'Return Received' || 
-          o.returnType === 'CUSTOMER RETURN' || 
-          o.returnType === 'RTO' ||
-          o.status === 'Customer Return' ||
-          o.status === 'RTO'
-        );
+        return orders.filter(o => o.status === 'Return Received');
       case 'return_not_received':
         return orders.filter(o => 
           o.status === 'Return Not Received' || 
-          ((o.status === 'Return In Transit' || o.status === 'In-Transit' || o.returnType === 'RTO') && (o.daysInTransit || 0) > 15)
+          ((o.status === 'Return In Transit' || o.status === 'In-Transit' || o.status === 'RTO') && (o.daysInTransit || 0) > 15)
         );
       case 'return_mismatch':
         return orders.filter(o => o.status === 'Return Mismatch' || (o.discrepancyReason && o.discrepancyReason.toLowerCase().includes('wrong')));
       case 'payment_mismatch':
         return orders.filter(o => o.reconciliationStatus === 'Discrepancy' || o.discrepancyAmount > 0);
       case 'received_payment':
-        return orders.filter(o => o.actualPayout > 0 && o.reconciliationStatus === 'Settled');
+        return orders.filter(o => o.actualPayout !== 0 && o.reconciliationStatus === 'Settled');
       case 'pending_payment':
-        return orders.filter(o => o.actualPayout === 0 || o.reconciliationStatus === 'Pending');
+        return orders.filter(o => o.reconciliationStatus === 'Pending' || o.actualPayout === 0);
       case 'unsettled_pickup':
-        return orders.filter(o => o.status === 'Unsettled Pickup' || o.status === 'Ready To Ship');
+        return orders.filter(o => o.status === 'Unsettled Pickup' || o.status === 'Ready To Ship' || o.status === 'Hold');
       case 'cancel_pickup':
         return orders.filter(o => o.status === 'Cancel Pickup');
       case 'claim':
@@ -773,8 +767,20 @@ export const OrderMantraDetailModal: React.FC<OrderMantraDetailModalProps> = ({
               </div>
               {selectedOrder.reverseShippingFee > 0 && (
                 <div className="flex justify-between py-1 border-b text-red-600 font-bold">
-                  <span className="font-sans">Reverse Shipping / RTO:</span>
+                  <span className="font-sans">Customer Return Fee:</span>
                   <span>-₹{selectedOrder.reverseShippingFee.toFixed(2)}</span>
+                </div>
+              )}
+              {selectedOrder.returnType === 'RTO' && (
+                <div className="flex justify-between py-1 border-b text-emerald-700 font-bold text-xs">
+                  <span className="font-sans">Return Shipping Fee (RTO):</span>
+                  <span>₹0.00 (Free Courier Return)</span>
+                </div>
+              )}
+              {selectedOrder.returnPriceType && (
+                <div className="flex justify-between py-1 border-b text-gray-600 text-xs">
+                  <span className="font-sans">Return Price Type:</span>
+                  <span className="font-medium text-gray-800">{selectedOrder.returnPriceType}</span>
                 </div>
               )}
               <div className="flex justify-between py-1.5 border-t border-gray-400 font-bold text-gray-900">

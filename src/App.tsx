@@ -35,6 +35,7 @@ export function App() {
   const [orders, setOrders] = useState<OrderItem[]>(INITIAL_ORDERS);
   const [claims, setClaims] = useState<ClaimItem[]>(INITIAL_CLAIMS);
   const [skuMasterList, setSkuMasterList] = useState<SkuMasterItem[]>(INITIAL_SKU_MASTER);
+  const [adSpend, setAdSpend] = useState<number>(0);
 
   // Filter orders by selected channel
   const displayedOrders = useMemo(() => {
@@ -154,14 +155,77 @@ export function App() {
     }, 500);
   };
 
-  const handleOrdersImported = (importedOrders: OrderItem[]) => {
-    // Avoid duplicate orders if re-importing
+  function mergeOrderStatuses(existing: OrderItem['status'], incoming: OrderItem['status']): OrderItem['status'] {
+    if (incoming === 'Return Received' || existing === 'Return Received') return 'Return Received';
+    if (incoming === 'Customer Return' || incoming === 'RTO' || incoming === 'Return In Transit' || incoming === 'Return Mismatch') {
+      return incoming;
+    }
+    if (existing === 'Customer Return' || existing === 'RTO' || existing === 'Return In Transit') {
+      return existing;
+    }
+    if (incoming === 'Delivered') return 'Delivered';
+    if (existing === 'Delivered') return 'Delivered';
+    if (incoming === 'Cancelled') return 'Cancelled';
+    if (existing === 'Cancelled') return 'Cancelled';
+    if (incoming === 'Shipped') return 'Shipped';
+    if (existing === 'Shipped') return 'Shipped';
+    return incoming || existing;
+  }
+
+  const handleOrdersImported = (importedOrders: OrderItem[], adCostTotal?: number) => {
     setOrders((prev) => {
-      const existingIds = new Set(prev.map(p => p.orderId));
-      const newOrders = importedOrders.filter(o => !existingIds.has(o.orderId));
-      return [...newOrders, ...prev];
+      const orderMap = new Map<string, OrderItem>(prev.map(o => [o.orderId, { ...o }]));
+
+      for (const incoming of importedOrders) {
+        const existing = orderMap.get(incoming.orderId);
+        if (!existing) {
+          orderMap.set(incoming.orderId, incoming);
+        } else {
+          // Smart 3-way merge across Orders, Payments, and Returns reports
+          const merged: OrderItem = {
+            ...existing,
+            // Real selling price (do not overwrite if incoming has 0)
+            salePrice: incoming.salePrice > 0 ? incoming.salePrice : existing.salePrice,
+            title: existing.title && !existing.title.startsWith('UNKNOWN') && existing.title !== 'GENERAL-SKU' 
+              ? existing.title 
+              : incoming.title,
+            sku: existing.sku && existing.sku !== 'GENERAL-SKU' && existing.sku !== 'UNKNOWN-SKU'
+              ? existing.sku 
+              : incoming.sku,
+            customerCity: existing.customerCity && existing.customerCity !== 'N/A' 
+              ? existing.customerCity 
+              : incoming.customerCity,
+            customerState: existing.customerState && existing.customerState !== 'N/A' 
+            ? existing.customerState 
+            : incoming.customerState,
+            // Courier and AWB tracking
+            courier: incoming.courier || existing.courier,
+            awbNumber: incoming.awbNumber || existing.awbNumber,
+            returnType: incoming.returnType || existing.returnType,
+            returnPriceType: incoming.returnPriceType || existing.returnPriceType,
+            scanDate: incoming.scanDate || existing.scanDate,
+            discrepancyReason: incoming.discrepancyReason || existing.discrepancyReason,
+            // Settlement & bank payout
+            actualPayout: incoming.actualPayout !== 0 ? incoming.actualPayout : existing.actualPayout,
+            reconciliationStatus: (incoming.reconciliationStatus === 'Settled' || incoming.reconciliationStatus === 'Discrepancy')
+              ? incoming.reconciliationStatus
+              : existing.reconciliationStatus,
+            bankDepositDate: incoming.bankDepositDate || existing.bankDepositDate,
+            bankUtr: incoming.bankUtr || existing.bankUtr,
+            shippingFee: (incoming.returnType === 'RTO' || incoming.status === 'RTO') ? 0 : (incoming.shippingFee > 0 ? incoming.shippingFee : existing.shippingFee),
+            reverseShippingFee: (incoming.returnType === 'RTO' || incoming.status === 'RTO') ? 0 : (incoming.reverseShippingFee > 0 ? incoming.reverseShippingFee : existing.reverseShippingFee),
+            status: mergeOrderStatuses(existing.status, incoming.status),
+          };
+          orderMap.set(incoming.orderId, merged);
+        }
+      }
+      return Array.from(orderMap.values());
     });
-    setActiveTab('reconciliation');
+
+    if (adCostTotal && adCostTotal > 0) {
+      setAdSpend(prev => Math.round((prev + adCostTotal) * 100) / 100);
+    }
+    setActiveTab('overview');
   };
 
   const handleAddClaim = (newClaim: ClaimItem) => {
@@ -318,6 +382,7 @@ export function App() {
                   claims={claims}
                   skuMasterList={skuMasterList}
                   currentMarketplace={currentMarketplace}
+                  adSpend={adSpend}
                   onSelectCategory={(category) => setSelectedMantraCategory(category)}
                   onOpenImport={() => setActiveTab('import')}
                   onOpenScanner={() => setActiveTab('scanner')}

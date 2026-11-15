@@ -15,6 +15,7 @@ interface OrderMantraDashboardProps {
   skuMasterList: SkuMasterItem[];
   currentMarketplace: Marketplace;
   storeName?: string;
+  adSpend?: number;
   onSelectCategory: (category: OrderMantraCategoryInfo) => void;
   onOpenImport: () => void;
   onOpenScanner: () => void;
@@ -29,6 +30,7 @@ export const OrderMantraDashboard: React.FC<OrderMantraDashboardProps> = ({
   skuMasterList,
   currentMarketplace,
   storeName = 'Seller Store',
+  adSpend = 0,
   onSelectCategory,
   onOpenImport,
   onOpenScanner,
@@ -42,22 +44,16 @@ export const OrderMantraDashboard: React.FC<OrderMantraDashboardProps> = ({
 
     // Filter status counts
     const cancelledOrders = orders.filter(o => o.status === 'Cancelled');
-    const readyToShipOrders = orders.filter(o => o.status === 'Ready To Ship');
+    const readyToShipOrders = orders.filter(o => o.status === 'Ready To Ship' || o.status === 'Hold');
     const shippedOrders = orders.filter(o => o.status === 'Shipped');
-    const returnInTransitOrders = orders.filter(o => o.status === 'Return In Transit' || o.status === 'In-Transit');
+    const returnInTransitOrders = orders.filter(o => o.status === 'Return In Transit' || o.status === 'In-Transit' || (o.status === 'RTO' && !o.scanDate));
     const outForDeliveryOrders = orders.filter(o => o.status === 'Out For Delivery');
     
-    const returnReceivedOrders = orders.filter(o => 
-      o.status === 'Return Received' || 
-      o.returnType === 'CUSTOMER RETURN' || 
-      o.returnType === 'RTO' ||
-      o.status === 'Customer Return' ||
-      o.status === 'RTO'
-    );
+    const returnReceivedOrders = orders.filter(o => o.status === 'Return Received');
 
     const returnNotReceivedOrders = orders.filter(o => 
       o.status === 'Return Not Received' || 
-      ((o.status === 'Return In Transit' || o.status === 'In-Transit' || o.returnType === 'RTO') && (o.daysInTransit || 0) > 15)
+      ((o.status === 'Return In Transit' || o.status === 'In-Transit' || o.status === 'RTO') && (o.daysInTransit || 0) > 15)
     );
 
     const returnMismatchOrders = orders.filter(o => 
@@ -70,9 +66,9 @@ export const OrderMantraDashboard: React.FC<OrderMantraDashboardProps> = ({
       o.discrepancyAmount > 0
     );
 
-    const receivedPaymentOrders = orders.filter(o => o.actualPayout > 0 && o.reconciliationStatus === 'Settled');
-    const pendingPaymentOrders = orders.filter(o => o.actualPayout === 0 || o.reconciliationStatus === 'Pending');
-    const unsettledPickupOrders = orders.filter(o => o.status === 'Unsettled Pickup' || o.status === 'Ready To Ship');
+    const receivedPaymentOrders = orders.filter(o => o.actualPayout !== 0 && o.reconciliationStatus === 'Settled');
+    const pendingPaymentOrders = orders.filter(o => o.reconciliationStatus === 'Pending' || o.actualPayout === 0);
+    const unsettledPickupOrders = orders.filter(o => o.status === 'Unsettled Pickup' || o.status === 'Ready To Ship' || o.status === 'Hold');
     const cancelPickupOrders = orders.filter(o => o.status === 'Cancel Pickup');
 
     // Cost Amounts (Base cost + packaging)
@@ -91,8 +87,7 @@ export const OrderMantraDashboard: React.FC<OrderMantraDashboardProps> = ({
     const totalActualPayout = sumPayout(orders);
     const grossProfit = totalActualPayout - totalCostOfGoods;
 
-    // Real Ad spend (0 until ad file uploaded)
-    const adSpend = 0;
+    // Real Ad spend (from Meesho Ads Cost tab)
     const netProfit = grossProfit - adSpend;
     const netProfitPercent = totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(2) : '0.00';
     const salesProfitPercent = totalRevenue > 0 ? ((grossProfit / totalRevenue) * 100).toFixed(2) : '0.00';
