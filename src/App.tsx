@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Sidebar, TabType } from './components/Sidebar';
 import { Header } from './components/Header';
-import { MetricCard } from './components/MetricCard';
 import { ProfitChart } from './components/ProfitChart';
 import { FileUploader } from './components/FileUploader';
 import { ReconciliationTable } from './components/ReconciliationTable';
@@ -9,27 +8,16 @@ import { SkuMatrix } from './components/SkuMatrix';
 import { SkuManager } from './components/SkuManager';
 import { ReturnAuditScanner } from './components/ReturnAuditScanner';
 import { ClaimsTracker } from './components/ClaimsTracker';
-import { OrderMantraDashboard } from './components/OrderMantraDashboard';
-import { OrderMantraDetailModal, OrderMantraCategoryInfo } from './components/OrderMantraDetailModal';
+import { SellWiseDashboard } from './components/SellWiseDashboard';
 import { INITIAL_ORDERS, INITIAL_CLAIMS, INITIAL_SKU_MASTER } from './data/mockData';
 import { OrderItem, SkuMetric, ClaimItem, SkuMasterItem, Marketplace } from './types';
-import {
-  TrendingUp,
-  AlertOctagon,
-  RotateCcw,
-  FileSpreadsheet,
-  UploadCloud,
-  LayoutGrid,
-  BarChart3,
-} from 'lucide-react';
+import { UploadCloud } from 'lucide-react';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
-  const [overviewMode, setOverviewMode] = useState<'mantra' | 'classic'>('mantra');
   const [currentMarketplace, setCurrentMarketplace] = useState<Marketplace>('all');
   const [dateRange, setDateRange] = useState<string>('30D');
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [selectedMantraCategory, setSelectedMantraCategory] = useState<OrderMantraCategoryInfo | null>(null);
 
   // App Master state
   const [orders, setOrders] = useState<OrderItem[]>(INITIAL_ORDERS);
@@ -112,41 +100,6 @@ export function App() {
       };
     });
   }, [displayedOrders, skuMasterList]);
-
-  // Aggregate Metrics dynamically
-  const metrics = useMemo(() => {
-    let grossSales = 0;
-    let netProfit = 0;
-    let discrepancies = 0;
-    let rtoLoss = 0;
-    let totalDeductions = 0;
-    let weightLeaks = 0;
-
-    displayedOrders.forEach((o) => {
-      grossSales += o.salePrice;
-      const profit = o.actualPayout - o.productCost - o.packagingCost;
-      netProfit += profit;
-      discrepancies += o.discrepancyAmount;
-      if (o.status === 'RTO' || o.status === 'Customer Return') {
-        rtoLoss += (o.reverseShippingFee + o.shippingFee + o.packagingCost);
-      }
-      if (o.weightDiscrepancy) {
-        weightLeaks += 1;
-      }
-      totalDeductions += (o.marketplaceCommission + o.shippingFee + o.reverseShippingFee + o.taxesAndGst);
-    });
-
-    return {
-      grossSales,
-      netProfit,
-      discrepancies,
-      rtoLoss,
-      totalDeductions,
-      weightLeaks,
-      orderCount: displayedOrders.length,
-      marginPercent: grossSales > 0 ? Math.round((netProfit / grossSales) * 100) : 0,
-    };
-  }, [displayedOrders]);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
@@ -338,150 +291,81 @@ export function App() {
         {/* Workspace Body */}
         <main className="flex-1 p-6 md:p-8 space-y-8 max-w-[1400px] w-full">
           
-          {/* Tab 1: Overview */}
+          {/* Tab 1: Overview - Clean Dedicated SellWise Experience */}
           {activeTab === 'overview' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-8 animate-fadeIn">
               
-              {/* View Switcher Banner */}
-              <div className="flex items-center justify-between bg-surface-elevated p-2 rounded-xl border border-outline shadow-xs">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setOverviewMode('mantra')}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                      overviewMode === 'mantra'
-                        ? 'bg-[#1b7e6d] text-white shadow-xs'
-                        : 'text-ink-muted hover:text-ink hover:bg-surface-sunken'
-                    }`}
-                  >
-                    <LayoutGrid className="w-3.5 h-3.5" />
-                    <span>Order Mantra Dashboard (Category View)</span>
-                  </button>
-
-                  <button
-                    onClick={() => setOverviewMode('classic')}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                      overviewMode === 'classic'
-                        ? 'bg-sky text-white shadow-xs'
-                        : 'text-ink-muted hover:text-ink hover:bg-surface-sunken'
-                    }`}
-                  >
-                    <BarChart3 className="w-3.5 h-3.5" />
-                    <span>Executive KPI & Charts</span>
-                  </button>
-                </div>
-
-                <div className="text-[11px] text-ink-muted font-mono hidden sm:block pr-2">
-                  Click any category box below to view Excel order ledger
-                </div>
-              </div>
-
-              {/* Mode 1: Order Mantra Category Dashboard */}
-              {overviewMode === 'mantra' && (
-                <OrderMantraDashboard
-                  orders={displayedOrders}
-                  claims={claims}
-                  skuMasterList={skuMasterList}
-                  currentMarketplace={currentMarketplace}
-                  adSpend={adSpend}
-                  onSelectCategory={(category) => setSelectedMantraCategory(category)}
-                  onOpenImport={() => setActiveTab('import')}
-                  onOpenScanner={() => setActiveTab('scanner')}
-                  onOpenSkuManager={() => setActiveTab('sku-manager')}
-                  onRefresh={handleRefresh}
-                  isRefreshing={isRefreshing}
-                />
-              )}
-
-              {/* Mode 2: Executive KPI Cards & Charts */}
-              {overviewMode === 'classic' && (
-                <div className="space-y-8 animate-fadeIn">
-                  {/* KPI Metric Cards */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                    <MetricCard
-                      title="Gross Order Sales"
-                      value={`₹${metrics.grossSales.toLocaleString('en-IN')}`}
-                      subValue={`${metrics.orderCount} total orders recorded`}
-                      badge={metrics.orderCount > 0 ? `${metrics.orderCount} Orders` : 'Empty'}
-                      badgeType="sky"
-                      theme="sky"
-                      icon={TrendingUp}
-                    />
-
-                    <MetricCard
-                      title="Real Net Profit"
-                      value={`₹${metrics.netProfit.toLocaleString('en-IN')}`}
-                      subValue={`${metrics.marginPercent}% clean margin after COGS`}
-                      badge={metrics.netProfit > 0 ? 'Profitable' : '₹0'}
-                      badgeType="leaf"
-                      theme="leaf"
-                      icon={TrendingUp}
-                    />
-
-                    <MetricCard
-                      title="Detected Discrepancies"
-                      value={`₹${metrics.discrepancies.toLocaleString('en-IN')}`}
-                      subValue={metrics.weightLeaks > 0 ? `${metrics.weightLeaks} courier weight overcharges` : 'Overcharged fees & missing payouts'}
-                      badge={metrics.discrepancies > 0 ? 'Action Needed' : 'None'}
-                      badgeType="coral"
-                      theme="coral"
-                      icon={AlertOctagon}
-                    />
-
-                    <MetricCard
-                      title="RTO & Return Losses"
-                      value={`₹${metrics.rtoLoss.toLocaleString('en-IN')}`}
-                      subValue="Freight penalty & damaged stock"
-                      badge={metrics.rtoLoss > 0 ? 'Loss Tracked' : '₹0'}
-                      badgeType="coral"
-                      theme="coral"
-                      icon={RotateCcw}
-                    />
-                  </div>
-
-                  {/* Dynamic Interactive Charts */}
-                  <ProfitChart
-                    orders={displayedOrders}
-                    onImportClick={() => setActiveTab('import')}
-                  />
-                </div>
-              )}
-
-              {/* Recent Orders Table or Empty State */}
+              {/* If no orders loaded, show friendly welcoming onboarder */}
               {displayedOrders.length === 0 ? (
-                <div className="bg-surface-elevated rounded-card p-10 border border-outline shadow-soft text-center flex flex-col items-center justify-center gap-3">
-                  <div className="w-14 h-14 rounded-2xl bg-sky-soft text-sky-deep flex items-center justify-center">
-                    <FileSpreadsheet className="w-7 h-7 stroke-[2.2]" />
+                <div className="bg-surface-elevated rounded-2xl p-10 border border-outline shadow-soft text-center flex flex-col items-center justify-center gap-4 max-w-2xl mx-auto my-8">
+                  <div className="w-16 h-16 rounded-2xl bg-sky-soft text-sky-deep flex items-center justify-center">
+                    <UploadCloud className="w-8 h-8 stroke-[2.2]" />
                   </div>
-                  <h3 className="text-base font-bold font-display text-ink">
-                    No Orders Uploaded Yet
-                  </h3>
-                  <p className="text-xs text-ink-muted max-w-md">
-                    Upload your raw order report or payment settlement sheet from Meesho, Flipkart, or Amazon to view your real profit and payment reconciliation.
-                  </p>
+                  <div>
+                    <h3 className="text-xl font-bold font-display text-ink">
+                      Welcome to SellWise
+                    </h3>
+                    <p className="text-xs text-ink-muted max-w-md mx-auto mt-1 leading-relaxed">
+                      Your intelligent e-commerce reconciliation dashboard. Upload your raw reports from <strong>Meesho, Flipkart, or Amazon</strong> to instantly track real net profit, detect lost returns, and prevent courier weight overcharges.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full text-left my-2 text-xs">
+                    <div className="p-3 rounded-xl bg-surface-sunken border border-outline">
+                      <div className="font-bold text-sky-deep">1. Orders Manifest</div>
+                      <div className="text-[11px] text-ink-muted mt-0.5">Captures prices, quantities & customer locations.</div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-surface-sunken border border-outline">
+                      <div className="font-bold text-emerald-700">2. Settlement Excel</div>
+                      <div className="text-[11px] text-ink-muted mt-0.5">Matches bank transfers, deposit dates & ad deductions.</div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-surface-sunken border border-outline">
+                      <div className="font-bold text-purple-700">3. Return Tracking</div>
+                      <div className="text-[11px] text-ink-muted mt-0.5">Tracks AWBs, couriers, and free ₹0 RTOs.</div>
+                    </div>
+                  </div>
+
                   <button
                     onClick={() => setActiveTab('import')}
-                    className="mt-2 flex items-center gap-2 bg-sky text-white px-5 py-2.5 rounded-button text-xs font-bold shadow-soft hover:bg-sky-deep transition-all"
+                    className="flex items-center gap-2 bg-sky-deep text-white px-6 py-3 rounded-xl text-xs font-bold shadow-soft hover:bg-sky transition-all active:scale-95"
                   >
                     <UploadCloud className="w-4 h-4" />
-                    <span>Upload Marketplace File (.xlsx, .csv)</span>
+                    <span>Upload Your First Marketplace File</span>
                   </button>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-base font-bold font-display text-ink">Recent Orders & Payout Status</h3>
-                    <button
-                      onClick={() => setActiveTab('reconciliation')}
-                      className="text-xs text-sky font-bold hover:underline"
-                    >
-                      View All Orders ({displayedOrders.length}) →
-                    </button>
-                  </div>
-                  <ReconciliationTable
-                    orders={displayedOrders.slice(0, 5)}
+                <>
+                  {/* Clean Dedicated SellWise Dashboard */}
+                  <SellWiseDashboard
+                    orders={displayedOrders}
+                    claims={claims}
+                    skuMasterList={skuMasterList}
+                    currentMarketplace={currentMarketplace}
+                    storeName="MENDPARA SURESHBHAI (Seller Store)"
+                    adSpend={adSpend}
+                    onOpenImport={() => setActiveTab('import')}
+                    onOpenScanner={() => setActiveTab('scanner')}
+                    onOpenSkuManager={() => setActiveTab('sku-manager')}
                     onOpenClaim={handleOpenClaimFromOrder}
+                    onDeleteOrder={handleDeleteOrder}
+                    onRefresh={handleRefresh}
+                    isRefreshing={isRefreshing}
                   />
-                </div>
+
+                  {/* Profit & Growth Analytics Chart */}
+                  <div className="space-y-4 pt-4 border-t border-outline">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-base font-bold text-ink">Cash Flow & Payout Trends</h3>
+                        <p className="text-xs text-ink-muted">Historical visual breakdown of customer sales vs net settlement credits.</p>
+                      </div>
+                    </div>
+                    <ProfitChart
+                      orders={displayedOrders}
+                      onImportClick={() => setActiveTab('import')}
+                    />
+                  </div>
+                </>
               )}
 
             </div>
@@ -559,18 +443,6 @@ export function App() {
 
         </main>
       </div>
-
-      {/* Order Mantra Excel Detailed View Modal */}
-      {selectedMantraCategory && (
-        <OrderMantraDetailModal
-          category={selectedMantraCategory}
-          orders={displayedOrders}
-          storeName="Seller Store"
-          onClose={() => setSelectedMantraCategory(null)}
-          onOpenClaim={handleOpenClaimFromOrder}
-          onDeleteOrder={handleDeleteOrder}
-        />
-      )}
 
     </div>
   );
