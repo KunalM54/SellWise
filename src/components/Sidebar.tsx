@@ -68,17 +68,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       
       {/* Top Brand Section */}
       <div>
-        <div className="p-5 border-b border-outline flex items-center gap-3">
-          <Logo size={40} />
-          <div>
-            <div className="flex items-center gap-1.5">
-              <h1 className="text-xl font-bold font-display text-ink tracking-tight">SellWise</h1>
-              <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-md bg-sky-soft text-sky-deep border border-sky/20">
-                PRO
-              </span>
-            </div>
-            <p className="text-[11px] text-ink-muted">Reconciliation Engine</p>
-          </div>
+        <div className="h-16 px-5 border-b border-outline flex items-center gap-3">
+          <Logo size={36} />
+          <h1 className="text-xl font-bold font-display text-ink tracking-tight">SellWise</h1>
         </div>
 
         {/* Navigation Links */}

@@ -1,16 +1,14 @@
 import { useState, useMemo } from 'react';
 import { Sidebar, TabType } from './components/Sidebar';
 import { Header } from './components/Header';
-import { ProfitChart } from './components/ProfitChart';
-import { FileUploader } from './components/FileUploader';
 import { ReconciliationTable } from './components/ReconciliationTable';
 import { SkuMatrix } from './components/SkuMatrix';
 import { SkuManager } from './components/SkuManager';
 import { ReturnAuditScanner } from './components/ReturnAuditScanner';
 import { ClaimsTracker } from './components/ClaimsTracker';
-import { SellWiseDashboard } from './components/SellWiseDashboard';
+import { OrdersExcelTable } from './components/OrdersExcelTable';
 import { INITIAL_ORDERS, INITIAL_CLAIMS, INITIAL_SKU_MASTER } from './data/mockData';
-import { OrderItem, SkuMetric, ClaimItem, SkuMasterItem, Marketplace } from './types';
+import { OrderItem, SkuMetric, ClaimItem, SkuMasterItem, Marketplace, ImportedOrderFile } from './types';
 
 const TAB_TITLES: Record<TabType, string> = {
   'overview': 'Overview & P&L',
@@ -25,13 +23,12 @@ const TAB_TITLES: Record<TabType, string> = {
 export function App() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [currentMarketplace, setCurrentMarketplace] = useState<Marketplace>('all');
-  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // App Master state
   const [orders, setOrders] = useState<OrderItem[]>(INITIAL_ORDERS);
+  const [orderFile, setOrderFile] = useState<ImportedOrderFile | null>(null);
   const [claims, setClaims] = useState<ClaimItem[]>(INITIAL_CLAIMS);
   const [skuMasterList, setSkuMasterList] = useState<SkuMasterItem[]>(INITIAL_SKU_MASTER);
-  const [adSpend, setAdSpend] = useState<number>(0);
 
   // Filter orders by selected channel
   const displayedOrders = useMemo(() => {
@@ -109,84 +106,69 @@ export function App() {
     });
   }, [displayedOrders, skuMasterList]);
 
-  const handleRefresh = () => {
-    setIsRefreshing(true);
-    setTimeout(() => {
-      setIsRefreshing(false);
-    }, 500);
-  };
+  const handleOrderFileLoaded = (file: ImportedOrderFile) => {
+    setOrderFile(file);
 
-  function mergeOrderStatuses(existing: OrderItem['status'], incoming: OrderItem['status']): OrderItem['status'] {
-    if (incoming === 'Return Received' || existing === 'Return Received') return 'Return Received';
-    if (incoming === 'Customer Return' || incoming === 'RTO' || incoming === 'Return In Transit' || incoming === 'Return Mismatch') {
-      return incoming;
-    }
-    if (existing === 'Customer Return' || existing === 'RTO' || existing === 'Return In Transit') {
-      return existing;
-    }
-    if (incoming === 'Delivered') return 'Delivered';
-    if (existing === 'Delivered') return 'Delivered';
-    if (incoming === 'Cancelled') return 'Cancelled';
-    if (existing === 'Cancelled') return 'Cancelled';
-    if (incoming === 'Shipped') return 'Shipped';
-    if (existing === 'Shipped') return 'Shipped';
-    return incoming || existing;
-  }
+    // Map raw records to OrderItem[] preserving all original data
+    const mappedOrders: OrderItem[] = file.rows.map((row, idx) => {
+      const subOrderNo = row['Sub Order No'] || row['sub order no'] || `ord-${idx + 1}`;
+      const sku = row['SKU'] || row['sku'] || 'GENERAL-SKU';
+      const title = row['Product Name'] || row['product name'] || sku;
+      const orderDate = row['Order Date'] || row['order date'] || new Date().toISOString().split('T')[0];
+      const state = row['Customer State'] || row['customer state'] || '';
+      const listedPrice = Number((row['Supplier Listed Price (Incl. GST + Commission)'] || '0').replace(/[^0-9.-]/g, '')) || 0;
+      const discPrice = Number((row['Supplier Discounted Price (Incl GST and Commision)'] || '0').replace(/[^0-9.-]/g, '')) || listedPrice;
+      const qty = Number((row['Quantity'] || '1').replace(/[^0-9]/g, '')) || 1;
+      const packetId = row['Packet Id'] || row['packet id'] || '';
+      const rawStatus = (row['Reason for Credit Entry'] || row['reason for credit entry'] || '').toUpperCase();
 
-  const handleOrdersImported = (importedOrders: OrderItem[], adCostTotal?: number) => {
-    setOrders((prev) => {
-      const orderMap = new Map<string, OrderItem>(prev.map(o => [o.orderId, { ...o }]));
+      let status: OrderItem['status'] = 'Delivered';
+      let returnType: OrderItem['returnType'] = undefined;
 
-      for (const incoming of importedOrders) {
-        const existing = orderMap.get(incoming.orderId);
-        if (!existing) {
-          orderMap.set(incoming.orderId, incoming);
-        } else {
-          // Smart 3-way merge across Orders, Payments, and Returns reports
-          const merged: OrderItem = {
-            ...existing,
-            // Real selling price (do not overwrite if incoming has 0)
-            salePrice: incoming.salePrice > 0 ? incoming.salePrice : existing.salePrice,
-            title: existing.title && !existing.title.startsWith('UNKNOWN') && existing.title !== 'GENERAL-SKU' 
-              ? existing.title 
-              : incoming.title,
-            sku: existing.sku && existing.sku !== 'GENERAL-SKU' && existing.sku !== 'UNKNOWN-SKU'
-              ? existing.sku 
-              : incoming.sku,
-            customerCity: existing.customerCity && existing.customerCity !== 'N/A' 
-              ? existing.customerCity 
-              : incoming.customerCity,
-            customerState: existing.customerState && existing.customerState !== 'N/A' 
-            ? existing.customerState 
-            : incoming.customerState,
-            // Courier and AWB tracking
-            courier: incoming.courier || existing.courier,
-            awbNumber: incoming.awbNumber || existing.awbNumber,
-            returnType: incoming.returnType || existing.returnType,
-            returnPriceType: incoming.returnPriceType || existing.returnPriceType,
-            scanDate: incoming.scanDate || existing.scanDate,
-            discrepancyReason: incoming.discrepancyReason || existing.discrepancyReason,
-            // Settlement & bank payout
-            actualPayout: incoming.actualPayout !== 0 ? incoming.actualPayout : existing.actualPayout,
-            reconciliationStatus: (incoming.reconciliationStatus === 'Settled' || incoming.reconciliationStatus === 'Discrepancy')
-              ? incoming.reconciliationStatus
-              : existing.reconciliationStatus,
-            bankDepositDate: incoming.bankDepositDate || existing.bankDepositDate,
-            bankUtr: incoming.bankUtr || existing.bankUtr,
-            shippingFee: (incoming.returnType === 'RTO' || incoming.status === 'RTO') ? 0 : (incoming.shippingFee > 0 ? incoming.shippingFee : existing.shippingFee),
-            reverseShippingFee: (incoming.returnType === 'RTO' || incoming.status === 'RTO') ? 0 : (incoming.reverseShippingFee > 0 ? incoming.reverseShippingFee : existing.reverseShippingFee),
-            status: mergeOrderStatuses(existing.status, incoming.status),
-          };
-          orderMap.set(incoming.orderId, merged);
-        }
-      }
-      return Array.from(orderMap.values());
+      if (rawStatus.includes('READY_TO_SHIP')) status = 'Ready To Ship';
+      else if (rawStatus.includes('HOLD')) status = 'Hold';
+      else if (rawStatus.includes('SHIPPED')) status = 'Shipped';
+      else if (rawStatus.includes('RTO')) { status = 'RTO'; returnType = 'RTO'; }
+      else if (rawStatus.includes('CANCEL')) { status = 'Cancelled'; returnType = 'CANCELLED'; }
+      else if (rawStatus.includes('DELIVERED')) { status = 'Delivered'; returnType = 'DELIVERED'; }
+      else if (rawStatus.includes('PENDING')) status = 'Ready To Ship';
+
+      return {
+        id: `ord-${subOrderNo}-${idx}`,
+        orderId: subOrderNo,
+        orderNumber: subOrderNo,
+        marketplace: 'meesho',
+        orderDate,
+        sku,
+        title,
+        quantity: qty,
+        customerCity: '',
+        customerState: state,
+        salePrice: discPrice || listedPrice,
+        productCost: 0,
+        packagingCost: 0,
+        marketplaceCommission: 0,
+        shippingFee: 0,
+        reverseShippingFee: 0,
+        taxesAndGst: 0,
+        expectedPayout: discPrice || listedPrice,
+        actualPayout: status === 'Delivered' ? (discPrice || listedPrice) : 0,
+        status,
+        returnType,
+        reconciliationStatus: status === 'Delivered' ? 'Settled' : 'Pending',
+        discrepancyAmount: 0,
+        claimEligible: status === 'RTO',
+        awbNumber: packetId,
+        rawRow: row,
+      };
     });
 
-    if (adCostTotal && adCostTotal > 0) {
-      setAdSpend(prev => Math.round((prev + adCostTotal) * 100) / 100);
-    }
-    setActiveTab('overview');
+    setOrders(mappedOrders);
+  };
+
+  const handleClearOrderFile = () => {
+    setOrderFile(null);
+    setOrders([]);
   };
 
   const handleAddClaim = (newClaim: ClaimItem) => {
@@ -232,10 +214,6 @@ export function App() {
 
   const handleDeleteSku = (skuCode: string) => {
     setSkuMasterList((prev) => prev.filter(s => s.sku !== skuCode));
-  };
-
-  const handleDeleteOrder = (orderId: string) => {
-    setOrders((prev) => prev.filter((o) => o.orderId !== orderId));
   };
 
   const handleUpdateOrderStatus = (orderId: string, status: OrderItem['status']) => {
@@ -295,94 +273,25 @@ export function App() {
         {/* Workspace Body */}
         <main className="flex-1 p-6 md:p-8 space-y-8 max-w-[1400px] w-full">
           
-          {/* Tab 1: Overview - Clean Dedicated SellWise Experience */}
+          {/* Tab 1: Overview - Focus 100% on Importing Order Files in Excel Table View */}
           {activeTab === 'overview' && (
-            <div className="space-y-8 animate-fadeIn">
-              
-              {/* If no orders loaded, directly show beautiful file import experience */}
-              {displayedOrders.length === 0 ? (
-                <div className="space-y-6 max-w-4xl mx-auto py-2">
-                  <div className="text-center space-y-1.5 mb-6">
-                    <h2 className="text-2xl font-bold font-display text-ink tracking-tight">
-                      Overview & Profit Reconciliation
-                    </h2>
-                    <p className="text-xs text-ink-muted max-w-lg mx-auto leading-relaxed">
-                      Import your marketplace reports (Orders, Payments/Settlement, or Returns) to immediately calculate true net profits and reconcile payouts.
-                    </p>
-                  </div>
-
-                  <FileUploader 
-                    onOrdersImported={handleOrdersImported}
-                    skuMasterList={skuMasterList}
-                  />
-
-                  {/* 3 Step Guide Cards */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full text-left my-2 text-xs">
-                    <div className="p-3.5 rounded-2xl bg-surface-elevated border border-outline shadow-soft">
-                      <div className="font-bold text-sky-deep mb-1">1. Orders Manifest</div>
-                      <div className="text-[11px] text-ink-muted leading-relaxed">Captures real selling prices, quantities, SKU names, and customer locations.</div>
-                    </div>
-                    <div className="p-3.5 rounded-2xl bg-surface-elevated border border-outline shadow-soft">
-                      <div className="font-bold text-emerald-700 mb-1">2. Settlement Excel</div>
-                      <div className="text-[11px] text-ink-muted leading-relaxed">Matches bank transfers, deposit dates, marketplace fees, and ad deductions.</div>
-                    </div>
-                    <div className="p-3.5 rounded-2xl bg-surface-elevated border border-outline shadow-soft">
-                      <div className="font-bold text-purple-700 mb-1">3. Return Tracking</div>
-                      <div className="text-[11px] text-ink-muted leading-relaxed">Audits couriers & AWBs, tracking free ₹0 RTOs versus customer returns.</div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  {/* Clean Dedicated SellWise Dashboard */}
-                  <SellWiseDashboard
-                    orders={displayedOrders}
-                    claims={claims}
-                    skuMasterList={skuMasterList}
-                    currentMarketplace={currentMarketplace}
-                    storeName="Seller Store"
-                    adSpend={adSpend}
-                    onOpenImport={() => setActiveTab('import')}
-                    onOpenScanner={() => setActiveTab('scanner')}
-                    onOpenSkuManager={() => setActiveTab('sku-manager')}
-                    onOpenClaim={handleOpenClaimFromOrder}
-                    onDeleteOrder={handleDeleteOrder}
-                    onRefresh={handleRefresh}
-                    isRefreshing={isRefreshing}
-                  />
-
-                  {/* Profit & Growth Analytics Chart */}
-                  <div className="space-y-4 pt-4 border-t border-outline">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h3 className="text-base font-bold text-ink">Cash Flow & Payout Trends</h3>
-                        <p className="text-xs text-ink-muted">Historical visual breakdown of customer sales vs net settlement credits.</p>
-                      </div>
-                    </div>
-                    <ProfitChart
-                      orders={displayedOrders}
-                      onImportClick={() => setActiveTab('import')}
-                    />
-                  </div>
-                </>
-              )}
-
+            <div className="space-y-6 animate-fadeIn">
+              <OrdersExcelTable
+                orderFile={orderFile}
+                onFileLoaded={handleOrderFileLoaded}
+                onClearFile={handleClearOrderFile}
+              />
             </div>
           )}
 
-          {/* Tab 2: Ingestion Dropzone */}
+          {/* Tab 2: Import Reports - Full Fidelity Orders Excel Table */}
           {activeTab === 'import' && (
             <div className="space-y-6 animate-fadeIn">
-              <FileUploader 
-                onOrdersImported={handleOrdersImported}
-                skuMasterList={skuMasterList}
+              <OrdersExcelTable
+                orderFile={orderFile}
+                onFileLoaded={handleOrderFileLoaded}
+                onClearFile={handleClearOrderFile}
               />
-              {displayedOrders.length > 0 && (
-                <ReconciliationTable
-                  orders={displayedOrders}
-                  onOpenClaim={handleOpenClaimFromOrder}
-                />
-              )}
             </div>
           )}
 

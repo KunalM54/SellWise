@@ -1,10 +1,10 @@
 import React, { useState, useRef } from 'react';
 import { UploadCloud, FileSpreadsheet, CheckCircle2, AlertTriangle, ArrowRight } from 'lucide-react';
 import { parseMarketplaceReport, ParseResult } from '../utils/parser';
-import { OrderItem, SkuMasterItem } from '../types';
+import { OrderItem, SkuMasterItem, ImportedOrderFile } from '../types';
 
 interface FileUploaderProps {
-  onOrdersImported: (orders: OrderItem[], adCostTotal?: number) => void;
+  onOrdersImported: (orders: OrderItem[], adCostTotal?: number, rawFile?: ImportedOrderFile) => void;
   skuMasterList: SkuMasterItem[];
 }
 
@@ -43,14 +43,14 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onOrdersImported, sk
 
   const handleApplyImport = () => {
     if (parseResult && parseResult.orders.length > 0) {
-      onOrdersImported(parseResult.orders, parseResult.adCostTotal);
+      onOrdersImported(parseResult.orders, parseResult.adCostTotal, parseResult.rawFile);
       setParseResult(null);
       setSelectedFileName('');
     }
   };
 
   return (
-    <div className="bg-surface-elevated rounded-card p-6 border border-outline shadow-soft space-y-4">
+    <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h3 className="text-lg font-bold font-display text-ink">Import Marketplace Reports</h3>

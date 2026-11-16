@@ -39,8 +39,8 @@ export const Header: React.FC<HeaderProps> = ({
   const selectedChannel = CHANNELS.find((c) => c.id === currentMarketplace) || CHANNELS[0];
 
   return (
-    <header className="bg-surface-elevated border-b border-outline sticky top-0 z-30 shadow-soft">
-      <div className="px-6 py-4 flex items-center justify-between gap-4">
+    <header className="bg-surface-elevated border-b border-outline sticky top-0 z-30 shadow-soft h-16">
+      <div className="px-6 h-full flex items-center justify-between gap-4">
         
         {/* Left Side: Page Title Only */}
         <div className="flex items-center gap-3">
@@ -60,12 +60,8 @@ export const Header: React.FC<HeaderProps> = ({
             type="button"
             onClick={() => setIsOpen((prev) => !prev)}
             aria-expanded={isOpen}
-            className="flex items-center gap-2.5 bg-surface hover:bg-surface-sunken border border-outline hover:border-outline-strong px-3.5 py-2 rounded-xl text-xs font-semibold text-ink transition-all shadow-xs"
+            className="flex items-center gap-2 bg-surface hover:bg-surface-sunken border border-outline hover:border-outline-strong px-3.5 py-2 rounded-xl text-xs font-semibold text-ink transition-all shadow-xs"
           >
-            <span
-              className="w-2.5 h-2.5 rounded-full shrink-0"
-              style={{ backgroundColor: selectedChannel.color }}
-            />
             <span className="font-semibold text-ink">{selectedChannel.label}</span>
             <ChevronDown
               className={`w-3.5 h-3.5 text-ink-muted ml-0.5 transition-transform duration-200 ${
@@ -76,7 +72,7 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Dropdown Menu */}
           {isOpen && (
-            <div className="absolute right-0 mt-2 w-52 bg-surface-elevated border border-outline rounded-xl shadow-lg py-1.5 z-50 animate-fadeIn">
+            <div className="absolute right-0 mt-2 w-48 bg-surface-elevated border border-outline rounded-xl shadow-lg py-1.5 z-50 animate-fadeIn">
               <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-muted">
                 Filter by Channel
               </div>
@@ -96,13 +92,7 @@ export const Header: React.FC<HeaderProps> = ({
                         : 'text-ink hover:bg-surface-sunken font-medium'
                     }`}
                   >
-                    <div className="flex items-center gap-2.5">
-                      <span
-                        className="w-2.5 h-2.5 rounded-full shrink-0"
-                        style={{ backgroundColor: ch.color }}
-                      />
-                      <span>{ch.label}</span>
-                    </div>
+                    <span>{ch.label}</span>
                     {isSelected && <Check className="w-4 h-4 text-sky-deep" />}
                   </button>
                 );

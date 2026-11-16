@@ -1,9 +1,10 @@
 import readXlsxFile, { readSheet } from 'read-excel-file/browser';
 import Papa from 'papaparse';
-import { OrderItem, SkuMasterItem } from '../types';
+import { OrderItem, SkuMasterItem, ImportedOrderFile, RawOrderRecord } from '../types';
 
 export interface ParseResult {
   orders: OrderItem[];
+  rawFile?: ImportedOrderFile;
   totalRows: number;
   recognizedMarketplace: 'meesho' | 'flipkart' | 'amazon' | 'unknown';
   reportType?: 'single_report' | 'two_way_settlement' | 'order_report';
@@ -109,9 +110,10 @@ async function parseExcelReport(file: File, skuMaster: SkuMasterItem[]): Promise
       }
     }
 
-    const headers = (targetRows[headerRowIndex] as unknown as (string | number | null)[]).map(h => String(h || '').trim().toLowerCase());
+    const originalHeaders = (targetRows[headerRowIndex] as unknown as (string | number | null)[]).map(h => String(h || '').trim());
+    const headers = originalHeaders.map(h => h.toLowerCase());
     const dataRows = targetRows.slice(headerRowIndex + 1);
-    const result = mapRowsToOrders(headers, dataRows as unknown as (string | number | null)[][], file.name, skuMaster);
+    const result = mapRowsToOrders(headers, dataRows as unknown as (string | number | null)[][], file.name, skuMaster, originalHeaders);
     if (adCostTotal > 0) {
       result.adCostTotal = Math.round(adCostTotal * 100) / 100;
     }
@@ -149,9 +151,10 @@ async function parseCsvReport(file: File, skuMaster: SkuMasterItem[]): Promise<P
           }
         }
 
-        const headers = results.data[headerRowIndex].map(h => String(h || '').trim().toLowerCase());
+        const originalHeaders = results.data[headerRowIndex].map(h => String(h || '').trim());
+        const headers = originalHeaders.map(h => h.toLowerCase());
         const dataRows = results.data.slice(headerRowIndex + 1);
-        resolve(mapRowsToOrders(headers, dataRows, file.name, skuMaster));
+        resolve(mapRowsToOrders(headers, dataRows, file.name, skuMaster, originalHeaders));
       },
       error: (err) => {
         resolve({ orders: [], totalRows: 0, recognizedMarketplace: 'unknown', error: err.message });
@@ -342,7 +345,8 @@ function mapRowsToOrders(
   headers: string[], 
   rows: (string | number | null)[][], 
   fileName: string = '', 
-  skuMaster: SkuMasterItem[] = []
+  skuMaster: SkuMasterItem[] = [],
+  originalHeaders: string[] = headers
 ): ParseResult {
   const fName = fileName.toLowerCase();
   
@@ -540,8 +544,16 @@ function mapRowsToOrders(
   ]);
 
   const parsedOrders: OrderItem[] = [];
+  const rawRows: RawOrderRecord[] = [];
 
   rows.forEach((row, i) => {
+    // Capture 100% of the raw record without dropping any column or value
+    const rowRecord: RawOrderRecord = {};
+    originalHeaders.forEach((h, idx) => {
+      rowRecord[h] = row[idx] !== undefined && row[idx] !== null ? String(row[idx]).trim() : '';
+    });
+    rawRows.push(rowRecord);
+
     const rawOrderId = orderIdIdx >= 0 ? String(row[orderIdIdx] || '').trim() : '';
     // Skip empty lines, formulas, or total summary rows at bottom of spreadsheets
     if (
@@ -859,11 +871,21 @@ function mapRowsToOrders(
       returnPriceType,
       scanDate,
       daysInTransit,
+      rawRow: rowRecord,
     });
   });
 
+  const rawFile: ImportedOrderFile = {
+    fileName,
+    headers: originalHeaders,
+    rows: rawRows,
+    totalRows: rawRows.length,
+    uploadedAt: new Date().toISOString()
+  };
+
   return {
     orders: parsedOrders,
+    rawFile,
     totalRows: rows.length,
     recognizedMarketplace: marketplace,
     detectedFileType,

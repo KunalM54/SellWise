@@ -19,6 +19,18 @@ export type OrderStatus =
 
 export type ReconciliationStatus = 'Settled' | 'Discrepancy' | 'Pending' | 'Claim Filed' | 'Claim Approved';
 
+export interface RawOrderRecord {
+  [key: string]: string;
+}
+
+export interface ImportedOrderFile {
+  fileName: string;
+  headers: string[];
+  rows: RawOrderRecord[];
+  totalRows: number;
+  uploadedAt: string;
+}
+
 export interface SkuMasterItem {
   sku: string;
   title: string;
@@ -67,6 +79,8 @@ export interface OrderItem {
   weightDiscrepancy?: boolean;
   bankUtr?: string;
   bankDepositDate?: string;
+  // Full raw order record preserving 100% of original columns and values
+  rawRow?: RawOrderRecord;
 }
 
 export interface SkuMetric {
