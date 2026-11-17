@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Sidebar, TabType } from './components/Sidebar';
 import { Header } from './components/Header';
 import { ReconciliationTable } from './components/ReconciliationTable';
@@ -9,6 +9,14 @@ import { ClaimsTracker } from './components/ClaimsTracker';
 import { OrdersExcelTable } from './components/OrdersExcelTable';
 import { INITIAL_ORDERS, INITIAL_CLAIMS, INITIAL_SKU_MASTER } from './data/mockData';
 import { OrderItem, SkuMetric, ClaimItem, SkuMasterItem, Marketplace, ImportedOrderFile } from './types';
+import {
+  loadSavedAppData,
+  saveOrderData,
+  clearOrderData,
+  saveOrders,
+  saveSkuMaster,
+  saveClaims,
+} from './utils/storage';
 
 const TAB_TITLES: Record<TabType, string> = {
   'overview': 'Overview & P&L',
@@ -41,6 +49,30 @@ export function App() {
   const [orderFile, setOrderFile] = useState<ImportedOrderFile | null>(null);
   const [claims, setClaims] = useState<ClaimItem[]>(INITIAL_CLAIMS);
   const [skuMasterList, setSkuMasterList] = useState<SkuMasterItem[]>(INITIAL_SKU_MASTER);
+
+  // Restore persistent state from IndexedDB on initial mount
+  useEffect(() => {
+    let isMounted = true;
+    loadSavedAppData().then((saved) => {
+      if (!isMounted) return;
+      if (saved.orderFile) {
+        setOrderFile(saved.orderFile);
+      }
+      if (saved.orders && saved.orders.length > 0) {
+        setOrders(saved.orders);
+      }
+      if (saved.claims && saved.claims.length > 0) {
+        setClaims(saved.claims);
+      }
+      if (saved.skuMasterList && saved.skuMasterList.length > 0) {
+        setSkuMasterList(saved.skuMasterList);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Filter orders by selected channel
   const displayedOrders = useMemo(() => {
@@ -176,37 +208,45 @@ export function App() {
     });
 
     setOrders(mappedOrders);
+    saveOrderData(file, mappedOrders);
   };
 
   const handleClearOrderFile = () => {
     setOrderFile(null);
     setOrders([]);
+    clearOrderData();
   };
 
   const handleAddClaim = (newClaim: ClaimItem) => {
-    setClaims((prev) => [newClaim, ...prev]);
+    setClaims((prev) => {
+      const next = [newClaim, ...prev];
+      saveClaims(next);
+      return next;
+    });
   };
 
   const handleUpdateClaimStatus = (claimId: string, status: ClaimItem['status'], amountApproved: number) => {
-    setClaims((prev) =>
-      prev.map((c) => (c.id === claimId ? { ...c, status, amountApproved } : c))
-    );
+    setClaims((prev) => {
+      const next = prev.map((c) => (c.id === claimId ? { ...c, status, amountApproved } : c));
+      saveClaims(next);
+      return next;
+    });
   };
 
   const handleSaveSku = (skuItem: SkuMasterItem) => {
     setSkuMasterList((prev) => {
       const idx = prev.findIndex(s => s.sku === skuItem.sku);
+      const next = idx >= 0 ? [...prev] : [skuItem, ...prev];
       if (idx >= 0) {
-        const copy = [...prev];
-        copy[idx] = skuItem;
-        return copy;
+        next[idx] = skuItem;
       }
-      return [skuItem, ...prev];
+      saveSkuMaster(next);
+      return next;
     });
 
     // Update existing orders linked to this SKU with new cost and weight
-    setOrders((prev) =>
-      prev.map((o) => {
+    setOrders((prev) => {
+      const next = prev.map((o) => {
         if (o.sku.toLowerCase() === skuItem.sku.toLowerCase()) {
           const actualWeight = skuItem.weightGrams;
           const billed = o.billedWeightGrams || actualWeight;
@@ -220,18 +260,26 @@ export function App() {
           };
         }
         return o;
-      })
-    );
+      });
+      saveOrders(next);
+      return next;
+    });
   };
 
   const handleDeleteSku = (skuCode: string) => {
-    setSkuMasterList((prev) => prev.filter(s => s.sku !== skuCode));
+    setSkuMasterList((prev) => {
+      const next = prev.filter(s => s.sku !== skuCode);
+      saveSkuMaster(next);
+      return next;
+    });
   };
 
   const handleUpdateOrderStatus = (orderId: string, status: OrderItem['status']) => {
-    setOrders((prev) =>
-      prev.map((o) => (o.orderId === orderId ? { ...o, status } : o))
-    );
+    setOrders((prev) => {
+      const next = prev.map((o) => (o.orderId === orderId ? { ...o, status } : o));
+      saveOrders(next);
+      return next;
+    });
   };
 
   const handleOpenClaimFromOrder = (order: OrderItem) => {

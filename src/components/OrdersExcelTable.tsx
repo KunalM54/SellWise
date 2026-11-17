@@ -8,7 +8,8 @@ import {
   ArrowUpDown, 
   ArrowUp, 
   ArrowDown, 
-  Trash2
+  Trash2,
+  Database
 } from 'lucide-react';
 import { ImportedOrderFile, RawOrderRecord } from '../types';
 import { parseMarketplaceReport } from '../utils/parser';
@@ -369,9 +370,15 @@ export const OrdersExcelTable: React.FC<OrdersExcelTableProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-outline">
         <div className="flex items-center gap-2 flex-wrap">
           {orderFile && (
-            <span className="px-2.5 py-1 rounded-full bg-sky-soft text-sky-deep text-xs font-mono font-bold border border-sky/30">
-              {orderFile.totalRows} Orders Imported
-            </span>
+            <>
+              <span className="px-2.5 py-1 rounded-full bg-sky-soft text-sky-deep text-xs font-mono font-bold border border-sky/30">
+                {orderFile.totalRows} Orders Imported
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-mono font-medium border border-emerald-200" title="Data stored in IndexedDB browser database; persists across page reloads.">
+                <Database className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Saved locally</span>
+              </span>
+            </>
           )}
           <span className="px-2.5 py-1 rounded text-[11px] font-bold bg-pink-50 text-pink-700 border border-pink-200 uppercase tracking-wide">
             Meesho Channel
