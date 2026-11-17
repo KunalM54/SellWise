@@ -62,18 +62,12 @@ export const SkuMatrix: React.FC<SkuMatrixProps> = ({ skus, onOpenSkuManager }) 
   return (
     <div className="bg-surface-elevated rounded-card border border-outline shadow-soft overflow-hidden">
       
-      {/* Header & Filter */}
-      <div className="p-5 border-b border-outline flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="text-lg font-bold font-display text-ink">SKU Profitability Matrix</h3>
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-sun-bright/20 text-sun-deep border border-sun/30">
-              Hero vs. Laggard
-            </span>
-          </div>
-          <p className="text-xs text-ink-muted">
-            Identify which products generate healthy margins versus those draining money through returns
-          </p>
+      {/* Controls & Filter */}
+      <div className="p-4 border-b border-outline flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-sun-bright/20 text-sun-deep border border-sun/30">
+            Hero vs. Laggard Classification
+          </span>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">

@@ -330,30 +330,52 @@ export const OrdersExcelTable: React.FC<OrdersExcelTableProps> = ({
     );
   };
 
+  // Split header into 2 rows when it has parentheses or is long, so columns don't stretch unnecessarily
+  const renderHeaderContent = (h: string) => {
+    // 1. Parenthesized subtitle, e.g. "Supplier Listed Price (Incl. GST + Commission)"
+    const parenIndex = h.indexOf('(');
+    if (parenIndex > 0) {
+      const main = h.slice(0, parenIndex).trim();
+      const sub = h.slice(parenIndex).trim();
+      return (
+        <div className="flex flex-col text-left leading-tight py-0.5">
+          <span className="font-bold text-ink whitespace-normal text-[11px]">{main}</span>
+          <span className="text-[10px] text-ink-muted font-normal whitespace-normal mt-0.5">{sub}</span>
+        </div>
+      );
+    }
+
+    // 2. Long multi-word header (e.g. "Reason for Credit Entry")
+    const words = h.split(' ');
+    if (words.length >= 3 && h.length > 16) {
+      const mid = Math.ceil(words.length / 2);
+      const line1 = words.slice(0, mid).join(' ');
+      const line2 = words.slice(mid).join(' ');
+      return (
+        <div className="flex flex-col text-left leading-tight py-0.5">
+          <span className="font-bold text-ink whitespace-normal text-[11px]">{line1}</span>
+          <span className="text-[10px] text-ink-muted font-normal whitespace-normal mt-0.5">{line2}</span>
+        </div>
+      );
+    }
+
+    return <span className="whitespace-normal leading-tight text-[11px]">{h}</span>;
+  };
+
   return (
     <div className="space-y-6 w-full animate-fadeIn select-text">
       
-      {/* 1. Header Toolbar directly on canvas (OrderBuddy clean layout) */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-2 border-b border-outline">
-        <div>
-          <div className="flex items-center gap-3">
-            <h2 className="text-xl font-bold font-display text-ink tracking-tight">
-              Orders Manifest View
-            </h2>
-            {orderFile && (
-              <span className="px-2.5 py-0.5 rounded-full bg-sky-soft text-sky-deep text-xs font-mono font-bold border border-sky/30">
-                {orderFile.totalRows} Orders Imported
-              </span>
-            )}
-            <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-pink-50 text-pink-700 border border-pink-200 uppercase">
-              Meesho Channel
+      {/* 1. Header Toolbar directly on canvas without redundant title/description */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-outline">
+        <div className="flex items-center gap-2 flex-wrap">
+          {orderFile && (
+            <span className="px-2.5 py-1 rounded-full bg-sky-soft text-sky-deep text-xs font-mono font-bold border border-sky/30">
+              {orderFile.totalRows} Orders Imported
             </span>
-          </div>
-          <p className="text-xs text-ink-muted mt-1">
-            {orderFile 
-              ? `Displaying full raw data from "${orderFile.fileName}" — all ${orderFile.headers.length} columns and values preserved with 100% fidelity.` 
-              : 'Import and inspect orders in a full-fidelity Excel-like spreadsheet table.'}
-          </p>
+          )}
+          <span className="px-2.5 py-1 rounded text-[11px] font-bold bg-pink-50 text-pink-700 border border-pink-200 uppercase tracking-wide">
+            Meesho Channel
+          </span>
         </div>
 
         {/* Actions */}
@@ -600,15 +622,18 @@ export const OrdersExcelTable: React.FC<OrdersExcelTableProps> = ({
                   {/* Render every header present in the file */}
                   {headers.map((h) => {
                     const isSorted = sortColumn === h;
+                    const isPriceCol = h === listedPriceKey || h === discPriceKey;
                     return (
                       <th
                         key={h}
                         onClick={() => handleSort(h)}
-                        className="py-2.5 px-3 border-r border-outline text-[11px] font-bold text-ink tracking-tight hover:bg-surface transition-colors cursor-pointer whitespace-nowrap"
+                        className={`py-2 px-3 border-r border-outline text-[11px] font-bold text-ink tracking-tight hover:bg-surface transition-colors cursor-pointer align-top ${
+                          isPriceCol ? 'w-36 min-w-[125px] max-w-[155px]' : ''
+                        }`}
                       >
-                        <div className="flex items-center justify-between gap-1.5">
-                          <span>{h}</span>
-                          <span className="text-ink-muted">
+                        <div className="flex items-start justify-between gap-1.5">
+                          {renderHeaderContent(h)}
+                          <span className="text-ink-muted shrink-0 mt-0.5">
                             {isSorted ? (
                               sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-sky" /> : <ArrowDown className="w-3 h-3 text-sky" />
                             ) : (
@@ -664,7 +689,7 @@ export const OrdersExcelTable: React.FC<OrdersExcelTableProps> = ({
                             <td 
                               key={colIdx} 
                               className={`py-2 px-3 border-r border-outline text-ink text-xs ${
-                                isPriceCol ? 'text-right font-mono font-medium' : ''
+                                isPriceCol ? 'text-right font-mono font-medium w-36 min-w-[125px] max-w-[155px]' : ''
                               } ${isQtyCol ? 'text-center font-mono font-bold' : ''}`}
                             >
                               {/* Status Badge */}

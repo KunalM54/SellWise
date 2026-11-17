@@ -12,7 +12,6 @@ import { OrderItem, SkuMetric, ClaimItem, SkuMasterItem, Marketplace, ImportedOr
 
 const TAB_TITLES: Record<TabType, string> = {
   'overview': 'Overview & P&L',
-  'import': 'Import Reports',
   'reconciliation': 'Reconciliation Ledger',
   'scanner': 'Return & Barcode Audit',
   'sku-manager': 'SKU Master & Costs',
@@ -23,6 +22,19 @@ const TAB_TITLES: Record<TabType, string> = {
 export function App() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [currentMarketplace, setCurrentMarketplace] = useState<Marketplace>('all');
+
+  // Sidebar collapse state
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem('sellwise_sidebar_collapsed') === 'true';
+  });
+
+  const handleToggleSidebar = () => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem('sellwise_sidebar_collapsed', String(next));
+      return next;
+    });
+  };
 
   // App Master state
   const [orders, setOrders] = useState<OrderItem[]>(INITIAL_ORDERS);
@@ -257,6 +269,7 @@ export function App() {
         activeTab={activeTab}
         onSelectTab={setActiveTab}
         discrepanciesCount={discrepanciesCount}
+        isCollapsed={isSidebarCollapsed}
       />
 
       {/* 2. Right Workspace Content Area */}
@@ -268,12 +281,14 @@ export function App() {
           currentMarketplace={currentMarketplace}
           onSelectMarketplace={setCurrentMarketplace}
           totalOrders={orders.length}
+          isSidebarCollapsed={isSidebarCollapsed}
+          onToggleSidebar={handleToggleSidebar}
         />
 
         {/* Workspace Body */}
         <main className="flex-1 p-6 md:p-8 space-y-8 max-w-[1400px] w-full">
           
-          {/* Tab 1: Overview - Focus 100% on Importing Order Files in Excel Table View */}
+          {/* Tab 1: Overview & P&L - Orders Excel Table */}
           {activeTab === 'overview' && (
             <div className="space-y-6 animate-fadeIn">
               <OrdersExcelTable
@@ -284,18 +299,7 @@ export function App() {
             </div>
           )}
 
-          {/* Tab 2: Import Reports - Full Fidelity Orders Excel Table */}
-          {activeTab === 'import' && (
-            <div className="space-y-6 animate-fadeIn">
-              <OrdersExcelTable
-                orderFile={orderFile}
-                onFileLoaded={handleOrderFileLoaded}
-                onClearFile={handleClearOrderFile}
-              />
-            </div>
-          )}
-
-          {/* Tab 3: Full Reconciliation Table */}
+          {/* Tab 2: Full Reconciliation Table */}
           {activeTab === 'reconciliation' && (
             <div className="space-y-6 animate-fadeIn">
               <ReconciliationTable
@@ -305,7 +309,7 @@ export function App() {
             </div>
           )}
 
-          {/* Tab 4: Inbound Return & Barcode Scanner */}
+          {/* Tab 3: Inbound Return & Barcode Scanner */}
           {activeTab === 'scanner' && (
             <div className="space-y-6 animate-fadeIn">
               <ReturnAuditScanner
@@ -316,7 +320,7 @@ export function App() {
             </div>
           )}
 
-          {/* Tab 5: Master SKU & Cost Engine */}
+          {/* Tab 4: Master SKU & Cost Engine */}
           {activeTab === 'sku-manager' && (
             <div className="space-y-6 animate-fadeIn">
               <SkuManager
@@ -327,7 +331,7 @@ export function App() {
             </div>
           )}
 
-          {/* Tab 6: SKU Matrix */}
+          {/* Tab 5: SKU Matrix */}
           {activeTab === 'skus' && (
             <div className="space-y-6 animate-fadeIn">
               <SkuMatrix 
@@ -337,7 +341,7 @@ export function App() {
             </div>
           )}
 
-          {/* Tab 7: Claims Tracker */}
+          {/* Tab 6: Claims Tracker */}
           {activeTab === 'claims' && (
             <div className="space-y-6 animate-fadeIn">
               <ClaimsTracker

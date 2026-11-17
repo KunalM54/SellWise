@@ -56,23 +56,11 @@ export const SkuManager: React.FC<SkuManagerProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Header Banner */}
-      <div className="bg-surface-elevated rounded-card p-6 border border-outline shadow-soft">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <Package className="w-5 h-5 text-sky-deep" />
-              <h2 className="text-xl font-bold font-display text-ink">SKU Master & Cost Engine</h2>
-            </div>
-            <p className="text-xs text-ink-muted mt-1 max-w-2xl">
-              Configure your actual Purchase Price (COGS), Packaging cost, and standard physical Weight. 
-              SellWise uses this to accurately compute real net margins and automatically flag weight overcharges.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 bg-sky-soft/60 text-sky-deep px-3 py-2 rounded-xl text-xs font-bold border border-sky/20">
-            <Scale className="w-4 h-4 shrink-0" />
-            <span>Auto-audits courier weight slabs</span>
-          </div>
+      {/* Top Info Badge */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-1">
+        <div className="flex items-center gap-2 bg-sky-soft/60 text-sky-deep px-3 py-1.5 rounded-xl text-xs font-bold border border-sky/20">
+          <Scale className="w-4 h-4 shrink-0" />
+          <span>Configured Purchase Price (COGS), Packaging & Weight for automatic courier weight slab & margin auditing</span>
         </div>
       </div>
 

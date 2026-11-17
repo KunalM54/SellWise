@@ -1,8 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Logo } from './Logo';
 import {
   BarChart3,
-  UploadCloud,
   FileCheck2,
   Sparkles,
   ShieldCheck,
@@ -10,19 +9,39 @@ import {
   Barcode,
 } from 'lucide-react';
 
-export type TabType = 'overview' | 'import' | 'reconciliation' | 'skus' | 'sku-manager' | 'scanner' | 'claims';
+export type TabType = 'overview' | 'reconciliation' | 'skus' | 'sku-manager' | 'scanner' | 'claims';
 
 interface SidebarProps {
   activeTab: TabType;
   onSelectTab: (tab: TabType) => void;
   discrepanciesCount: number;
+  isCollapsed: boolean;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
   onSelectTab,
   discrepanciesCount,
+  isCollapsed,
 }) => {
+  const [isHovered, setIsHovered] = useState(false);
+
+  // When collapsed: hovering opens it, cursor leaving closes it.
+  // When not collapsed (manually opened via navbar): it stays permanently open.
+  const isVisuallyOpen = !isCollapsed || isHovered;
+
+  const handleMouseEnter = () => {
+    if (isCollapsed) {
+      setIsHovered(true);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    if (isCollapsed) {
+      setIsHovered(false);
+    }
+  };
+
   const navItems = [
     {
       id: 'overview' as TabType,
@@ -30,16 +49,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: BarChart3,
     },
     {
-      id: 'import' as TabType,
-      label: 'Import Reports',
-      icon: UploadCloud,
-    },
-    {
       id: 'reconciliation' as TabType,
       label: 'Reconciliation Ledger',
       icon: FileCheck2,
       badge: discrepanciesCount > 0 ? `${discrepanciesCount} alerts` : undefined,
-      badgeType: 'coral',
     },
     {
       id: 'scanner' as TabType,
@@ -64,56 +77,88 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   return (
-    <aside className="w-64 bg-surface-elevated border-r border-outline flex flex-col justify-between shrink-0 h-screen sticky top-0 z-40 select-none">
-      
-      {/* Top Brand Section */}
-      <div>
-        <div className="h-16 px-5 border-b border-outline flex items-center gap-3">
-          <Logo size={36} />
-          <h1 className="text-xl font-bold font-display text-ink tracking-tight">SellWise</h1>
+    <aside
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      className={`bg-[#1D4ED8] border-r border-blue-600/50 flex flex-col h-screen sticky top-0 z-40 select-none transition-[width] duration-300 ease-in-out text-white shrink-0 ${
+        isVisuallyOpen ? 'w-64 shadow-lg' : 'w-16 shadow-sm'
+      }`}
+    >
+      {/* Top Brand Header */}
+      <div
+        className={`h-16 border-b border-white/15 flex items-center transition-all ${
+          isVisuallyOpen ? 'px-4 justify-start gap-3' : 'px-0 justify-center'
+        }`}
+      >
+        <div className="p-1 rounded-xl bg-white/10 backdrop-blur-xs border border-white/20 shrink-0">
+          <Logo size={28} />
         </div>
-
-        {/* Navigation Links */}
-        <div className="p-3 space-y-1">
-          <div className="px-3 py-2 text-[11px] font-bold text-ink-muted uppercase tracking-wider">
-            Main Navigation
+        {isVisuallyOpen && (
+          <div className="flex flex-col overflow-hidden">
+            <h1 className="text-xl font-bold font-display text-white tracking-tight leading-none truncate">
+              SellWise
+            </h1>
+            <span className="text-[10px] text-blue-200 font-medium mt-0.5 truncate">
+              Profit & Audit Suite
+            </span>
           </div>
-
-          {navItems.map((item) => {
-            const active = activeTab === item.id;
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.id}
-                onClick={() => onSelectTab(item.id)}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all duration-150 ${
-                  active
-                    ? 'bg-sky text-white shadow-soft shadow-sky-glow/40'
-                    : 'text-ink-muted hover:text-ink hover:bg-surface-sunken'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <Icon className="w-4 h-4 stroke-[2.2]" />
-                  <span>{item.label}</span>
-                </div>
-
-                {item.badge && (
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                      active
-                        ? 'bg-white text-coral'
-                        : 'bg-coral-soft text-coral border border-coral/20'
-                    }`}
-                  >
-                    {item.badge}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
+        )}
       </div>
 
+      {/* Navigation Links */}
+      <div className="p-2 space-y-1 flex-1 overflow-y-auto">
+        {isVisuallyOpen && (
+          <div className="px-3 py-2 text-[10px] font-bold text-blue-200/80 uppercase tracking-wider">
+            Main Navigation
+          </div>
+        )}
+
+        {navItems.map((item) => {
+          const active = activeTab === item.id;
+          const Icon = item.icon;
+          return (
+            <button
+              key={item.id}
+              onClick={() => onSelectTab(item.id)}
+              title={!isVisuallyOpen ? item.label : undefined}
+              className={`w-full flex items-center rounded-xl text-xs font-bold transition-all duration-150 relative ${
+                isVisuallyOpen ? 'px-3.5 py-2.5 justify-between' : 'p-3 justify-center'
+              } ${
+                active
+                  ? 'bg-white text-blue-700 shadow-md shadow-blue-900/30 font-bold'
+                  : 'text-blue-100 hover:text-white hover:bg-white/15'
+              }`}
+            >
+              <div className={`flex items-center ${isVisuallyOpen ? 'gap-3' : 'justify-center'}`}>
+                <Icon
+                  className={`w-4 h-4 shrink-0 ${
+                    active ? 'stroke-[2.5] text-blue-700' : 'stroke-[2.2] text-blue-200'
+                  }`}
+                />
+                {isVisuallyOpen && <span className="truncate">{item.label}</span>}
+              </div>
+
+              {/* Badge when expanded */}
+              {isVisuallyOpen && item.badge && (
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ml-1.5 ${
+                    active
+                      ? 'bg-rose-100 text-rose-700 border border-rose-300'
+                      : 'bg-rose-500 text-white shadow-xs'
+                  }`}
+                >
+                  {item.badge}
+                </span>
+              )}
+
+              {/* Indicator Dot when collapsed */}
+              {!isVisuallyOpen && item.badge && (
+                <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-rose-400 ring-2 ring-[#1D4ED8]" />
+              )}
+            </button>
+          );
+        })}
+      </div>
     </aside>
   );
 };

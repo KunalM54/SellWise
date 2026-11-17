@@ -87,22 +87,10 @@ export const ReturnAuditScanner: React.FC<ReturnAuditScannerProps> = ({
   return (
     <div className="space-y-6">
       {/* Header Info */}
-      <div className="bg-surface-elevated rounded-card p-6 border border-outline shadow-soft">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <Barcode className="w-5 h-5 text-sky-deep" />
-              <h2 className="text-xl font-bold font-display text-ink">Inbound Return & Barcode Scanner</h2>
-            </div>
-            <p className="text-xs text-ink-muted mt-1 max-w-2xl">
-              Inspect physical RTO and Customer Return parcels as they land at your warehouse.
-              Scan the courier tracking barcode or Order ID to instantly verify legitimacy and raise dispute claims before marketplace SPF deadlines expire.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 bg-coral-soft text-coral px-3 py-2 rounded-xl text-xs font-bold border border-coral/20">
-            <Clock className="w-4 h-4 shrink-0" />
-            <span>Meesho/Flipkart claim window: 7-14 Days</span>
-          </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-1">
+        <div className="flex items-center gap-2 bg-coral-soft text-coral px-3 py-1.5 rounded-xl text-xs font-bold border border-coral/20">
+          <Clock className="w-4 h-4 shrink-0" />
+          <span>Meesho/Flipkart dispute claim window: 7-14 Days from physical arrival</span>
         </div>
       </div>
 

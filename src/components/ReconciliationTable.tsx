@@ -101,14 +101,7 @@ export const ReconciliationTable: React.FC<ReconciliationTableProps> = ({ orders
     <div className="bg-surface-elevated rounded-card border border-outline shadow-soft overflow-hidden">
       
       {/* Table Controls */}
-      <div className="p-5 border-b border-outline flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h3 className="text-lg font-bold font-display text-ink">Reconciliation & Order Ledger</h3>
-          <p className="text-xs text-ink-muted">
-            Tracking exact marketplace payout vs expected receivable with instant discrepancy & weight leak detection
-          </p>
-        </div>
-
+      <div className="p-4 border-b border-outline flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
           {/* Search Box */}
           <div className="relative">

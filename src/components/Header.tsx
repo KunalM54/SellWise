@@ -1,12 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Marketplace } from '../types';
-import { ChevronDown, Check, Sparkles } from 'lucide-react';
+import { ChevronDown, Check, Sparkles, PanelLeftOpen, PanelLeftClose } from 'lucide-react';
 
 interface HeaderProps {
   title: string;
   currentMarketplace: Marketplace;
   onSelectMarketplace: (m: Marketplace) => void;
   totalOrders?: number;
+  isSidebarCollapsed?: boolean;
+  onToggleSidebar?: () => void;
 }
 
 const CHANNELS: { id: Marketplace; label: string; color: string; icon?: typeof Sparkles }[] = [
@@ -21,6 +23,8 @@ export const Header: React.FC<HeaderProps> = ({
   currentMarketplace,
   onSelectMarketplace,
   totalOrders = 0,
+  isSidebarCollapsed = false,
+  onToggleSidebar,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -42,8 +46,24 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="bg-surface-elevated border-b border-outline sticky top-0 z-30 shadow-soft h-16">
       <div className="px-6 h-full flex items-center justify-between gap-4">
         
-        {/* Left Side: Page Title Only */}
+        {/* Left Side: Sidebar Toggle & Page Title */}
         <div className="flex items-center gap-3">
+          {onToggleSidebar && (
+            <button
+              type="button"
+              onClick={onToggleSidebar}
+              className="p-2 rounded-xl text-ink-muted hover:text-ink hover:bg-surface-sunken border border-transparent hover:border-outline transition-all"
+              title={isSidebarCollapsed ? "Open sidebar (Expand)" : "Close sidebar (Collapse)"}
+              aria-label="Toggle Sidebar"
+            >
+              {isSidebarCollapsed ? (
+                <PanelLeftOpen className="w-5 h-5 text-sky-deep" />
+              ) : (
+                <PanelLeftClose className="w-5 h-5" />
+              )}
+            </button>
+          )}
+
           <h1 className="text-xl font-bold font-display text-ink tracking-tight">
             {title}
           </h1>
@@ -105,4 +125,3 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
-
