@@ -2,14 +2,22 @@ import React, { useState } from 'react';
 import { SkuMasterItem } from '../types';
 import { Plus, Package, Save, Trash2, Edit2, Scale, Info } from 'lucide-react';
 
+export interface DetectedSku {
+  sku: string;
+  title: string;
+  orders: number;
+}
+
 interface SkuManagerProps {
   skuMasterList: SkuMasterItem[];
+  detectedSkus?: DetectedSku[];
   onSaveSku: (skuItem: SkuMasterItem) => void;
   onDeleteSku: (skuCode: string) => void;
 }
 
 export const SkuManager: React.FC<SkuManagerProps> = ({
   skuMasterList,
+  detectedSkus = [],
   onSaveSku,
   onDeleteSku,
 }) => {
@@ -54,6 +62,17 @@ export const SkuManager: React.FC<SkuManagerProps> = ({
     setCategory(item.category || '');
   };
 
+  const handleConfigure = (sku: string, title: string) => {
+    setEditingSku(sku);
+    setSkuCode(sku);
+    setTitle(title);
+    setCostPrice('');
+    setPackagingCost(15);
+    setWeightGrams(350);
+    setCategory('');
+    document.getElementById('sku-cost-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   return (
     <div className="space-y-6">
       {/* Top Info Badge */}
@@ -64,9 +83,44 @@ export const SkuManager: React.FC<SkuManagerProps> = ({
         </div>
       </div>
 
+      {detectedSkus.length > 0 && (
+        <div className="bg-surface-elevated rounded-card border border-outline shadow-soft p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div>
+              <h3 className="text-sm font-bold font-display text-ink">SKUs found in your orders</h3>
+              <p className="text-[11px] text-ink-muted">
+                {detectedSkus.length} SKU(s) still have no cost price. Profit stays hidden until you add it.
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+            {detectedSkus.map((entry) => (
+              <div
+                key={entry.sku}
+                className="flex items-center justify-between gap-2 rounded-xl border border-outline bg-surface-sunken/40 px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <p className="text-xs font-bold font-mono text-ink truncate">{entry.sku}</p>
+                  <p className="text-[10px] text-ink-muted truncate">
+                    {entry.orders} order item(s) · {entry.title}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleConfigure(entry.sku, entry.title)}
+                  className="text-[10px] font-bold text-sky hover:text-sky-deep shrink-0 px-2 py-1 rounded-lg hover:bg-sky-soft transition-all"
+                >
+                  Set cost
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Form Panel */}
-        <div className="bg-surface-elevated rounded-card p-6 border border-outline shadow-soft h-fit">
+        <div id="sku-cost-form" className="bg-surface-elevated rounded-card p-6 border border-outline shadow-soft h-fit">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-bold font-display text-ink flex items-center gap-2">
               {editingSku ? <Edit2 className="w-4 h-4 text-sky" /> : <Plus className="w-4 h-4 text-leaf" />}

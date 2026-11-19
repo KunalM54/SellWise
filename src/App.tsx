@@ -1,40 +1,77 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, CheckCircle2, Loader2, X } from 'lucide-react';
 import { Sidebar, TabType } from './components/Sidebar';
 import { Header } from './components/Header';
-import { ReconciliationTable } from './components/ReconciliationTable';
-import { SkuMatrix } from './components/SkuMatrix';
-import { SkuManager } from './components/SkuManager';
-import { ReturnAuditScanner } from './components/ReturnAuditScanner';
-import { ClaimsTracker } from './components/ClaimsTracker';
-import { OrdersExcelTable } from './components/OrdersExcelTable';
-import { INITIAL_ORDERS, INITIAL_CLAIMS, INITIAL_SKU_MASTER } from './data/mockData';
-import { OrderItem, SkuMetric, ClaimItem, SkuMasterItem, Marketplace, ImportedOrderFile } from './types';
+import { LedgerUploader } from './components/LedgerUploader';
+import { LedgerDashboard } from './components/LedgerDashboard';
+import { LedgerOrdersTable } from './components/LedgerOrdersTable';
+import { SkuManager, DetectedSku } from './components/SkuManager';
+import { SkuMasterItem } from './types';
+import { LedgerEvent, LedgerFileMeta, LedgerItem } from './types/ledger';
+import { buildLedger, dedupeEvents } from './utils/ledger';
+import { parseMeeshoFile } from './utils/meesho';
 import {
-  loadSavedAppData,
-  saveOrderData,
-  clearOrderData,
-  saveOrders,
+  clearLedgerState,
+  loadLedgerState,
+  loadSkuMaster,
+  saveLedgerEvents,
+  saveLedgerFiles,
   saveSkuMaster,
-  saveClaims,
 } from './utils/storage';
 
-const TAB_TITLES: Record<TabType, string> = {
-  'overview': 'Overview & P&L',
-  'reconciliation': 'Reconciliation Ledger',
-  'scanner': 'Return & Barcode Audit',
-  'sku-manager': 'SKU Master & Costs',
-  'skus': 'SKU Profit Matrix',
-  'claims': 'Dispute & SPF Claims',
+const TAB_TITLES: Record<TabType, { title: string; subtitle: string }> = {
+  dashboard: {
+    title: 'Profit Dashboard',
+    subtitle: 'Meesho orders, fees, returns and profit in one place',
+  },
+  orders: {
+    title: 'Order Ledger',
+    subtitle: 'Every sub-order, its status and its settlement state',
+  },
+  'sku-manager': {
+    title: 'SKU Costs',
+    subtitle: 'Cost price and packaging per SKU — the missing half of profit',
+  },
 };
 
-export function App() {
-  const [activeTab, setActiveTab] = useState<TabType>('overview');
-  const [currentMarketplace, setCurrentMarketplace] = useState<Marketplace>('all');
+interface Notice {
+  tone: 'ok' | 'warn';
+  messages: string[];
+}
 
-  // Sidebar collapse state
+function itemTitle(item: LedgerItem): string {
+  const event = item.events.find((entry) => entry.rawRow['Product Name']);
+  return event?.rawRow['Product Name'] ?? item.sku;
+}
+
+export function App() {
+  const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
     return localStorage.getItem('sellwise_sidebar_collapsed') === 'true';
   });
+
+  const [events, setEvents] = useState<LedgerEvent[]>([]);
+  const [files, setFiles] = useState<LedgerFileMeta[]>([]);
+  const [skuMasterList, setSkuMasterList] = useState<SkuMasterItem[]>([]);
+  const [isParsing, setIsParsing] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [notice, setNotice] = useState<Notice | null>(null);
+
+  // Restore persisted ledger + SKU costs on mount.
+  useEffect(() => {
+    let isMounted = true;
+    Promise.all([loadLedgerState(), loadSkuMaster()]).then(([ledger, savedSkus]) => {
+      if (!isMounted) return;
+      if (ledger.events) setEvents(ledger.events);
+      if (ledger.files) setFiles(ledger.files);
+      if (savedSkus) setSkuMasterList(savedSkus);
+      setIsLoaded(true);
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleToggleSidebar = () => {
     setIsSidebarCollapsed((prev) => {
@@ -44,366 +81,242 @@ export function App() {
     });
   };
 
-  // App Master state
-  const [orders, setOrders] = useState<OrderItem[]>(INITIAL_ORDERS);
-  const [orderFile, setOrderFile] = useState<ImportedOrderFile | null>(null);
-  const [claims, setClaims] = useState<ClaimItem[]>(INITIAL_CLAIMS);
-  const [skuMasterList, setSkuMasterList] = useState<SkuMasterItem[]>(INITIAL_SKU_MASTER);
+  const costs = useMemo(
+    () =>
+      skuMasterList.map((item) => ({
+        sku: item.sku,
+        costPrice: item.costPrice,
+        packagingCost: item.packagingCost,
+      })),
+    [skuMasterList],
+  );
 
-  // Restore persistent state from IndexedDB on initial mount
-  useEffect(() => {
-    let isMounted = true;
-    loadSavedAppData().then((saved) => {
-      if (!isMounted) return;
-      if (saved.orderFile) {
-        setOrderFile(saved.orderFile);
-      }
-      if (saved.orders && saved.orders.length > 0) {
-        setOrders(saved.orders);
-      }
-      if (saved.claims && saved.claims.length > 0) {
-        setClaims(saved.claims);
-      }
-      if (saved.skuMasterList && saved.skuMasterList.length > 0) {
-        setSkuMasterList(saved.skuMasterList);
-      }
-    });
+  const ledger = useMemo(() => {
+    const sales = events.filter((event) => event.eventType === 'sale');
+    const others = events.filter((event) => event.eventType !== 'sale');
+    return buildLedger(sales, others, costs);
+  }, [events, costs]);
 
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  const detectedSkus = useMemo<DetectedSku[]>(() => {
+    const configured = new Set(
+      skuMasterList.filter((item) => item.costPrice > 0).map((item) => item.sku.toLowerCase()),
+    );
+    const map = new Map<string, DetectedSku>();
+    for (const item of ledger.items) {
+      if (!item.sku || configured.has(item.sku.toLowerCase())) continue;
+      const bucket = map.get(item.sku);
+      if (bucket) bucket.orders += 1;
+      else map.set(item.sku, { sku: item.sku, title: itemTitle(item), orders: 1 });
+    }
+    return [...map.values()].sort((a, b) => b.orders - a.orders);
+  }, [ledger.items, skuMasterList]);
 
-  // Filter orders by selected channel
-  const displayedOrders = useMemo(() => {
-    if (currentMarketplace === 'all') return orders;
-    return orders.filter((o) => o.marketplace === currentMarketplace);
-  }, [orders, currentMarketplace]);
+  const handleUpload = useCallback(
+    async (incoming: File[]) => {
+      if (incoming.length === 0) return;
+      setIsParsing(true);
+      const messages: string[] = [];
+      const parsedFiles: Array<{ meta: LedgerFileMeta; events: LedgerEvent[] }> = [];
 
-  // Derive SKU metrics dynamically from uploaded orders
-  const skus = useMemo<SkuMetric[]>(() => {
-    if (displayedOrders.length === 0) return [];
+      for (const file of incoming) {
+        try {
+          const result = await parseMeeshoFile(file);
+          result.warnings.forEach((warning) => messages.push(warning));
 
-    const map: { [sku: string]: SkuMetric } = {};
+          if (result.kind === 'unknown') {
+            messages.push(`"${file.name}" was not recognised as a Meesho report and was skipped.`);
+            continue;
+          }
 
-    displayedOrders.forEach((o) => {
-      const s = o.sku || 'GENERAL-SKU';
-      const master = skuMasterList.find((m) => m.sku.toLowerCase() === s.toLowerCase());
-
-      if (!map[s]) {
-        map[s] = {
-          sku: s,
-          title: o.title || s,
-          totalOrders: 0,
-          deliveredOrders: 0,
-          rtoOrders: 0,
-          customerReturns: 0,
-          totalRevenue: 0,
-          totalCost: 0,
-          totalMarketplaceFees: 0,
-          netProfit: 0,
-          profitMarginPercent: 0,
-          returnRatePercent: 0,
-          type: 'Profitable',
-          weightGrams: master?.weightGrams || o.actualWeightGrams || 350,
-        };
-      }
-
-      map[s].totalOrders += 1;
-      map[s].totalRevenue += o.salePrice;
-      map[s].totalCost += (o.productCost + o.packagingCost);
-      map[s].totalMarketplaceFees += (o.marketplaceCommission + o.shippingFee + o.reverseShippingFee + o.taxesAndGst);
-
-      const itemProfit = o.actualPayout - o.productCost - o.packagingCost;
-      map[s].netProfit += itemProfit;
-
-      if (o.status === 'Delivered') {
-        map[s].deliveredOrders += 1;
-      } else if (o.status === 'RTO') {
-        map[s].rtoOrders += 1;
-      } else if (o.status === 'Customer Return') {
-        map[s].customerReturns += 1;
-      }
-    });
-
-    // Compute margins and categorize
-    return Object.values(map).map((sku) => {
-      const margin = sku.totalRevenue > 0 ? Math.round((sku.netProfit / sku.totalRevenue) * 100) : 0;
-      const totalReturns = sku.rtoOrders + sku.customerReturns;
-      const returnRate = sku.totalOrders > 0 ? Math.round((totalReturns / sku.totalOrders) * 100) : 0;
-
-      let type: SkuMetric['type'] = 'Profitable';
-      if (sku.netProfit < 0 || returnRate > 35) {
-        type = 'Laggard';
-      } else if (margin > 25 && returnRate < 20 && sku.totalOrders >= 1) {
-        type = 'Hero';
-      } else if (margin <= 10) {
-        type = 'Breakeven';
+          parsedFiles.push({
+            meta: {
+              id: `${result.kind}:${result.fileName}`,
+              fileName: result.fileName,
+              kind: result.kind,
+              rowCount: result.rowCount,
+              eventCount: result.events.length,
+              uploadedAt: new Date().toISOString(),
+            },
+            events: result.events,
+          });
+        } catch (error) {
+          messages.push(
+            `"${file.name}" could not be read: ${error instanceof Error ? error.message : 'unknown error'}`,
+          );
+        }
       }
 
-      return {
-        ...sku,
-        profitMarginPercent: margin,
-        returnRatePercent: returnRate,
-        type,
-      };
-    });
-  }, [displayedOrders, skuMasterList]);
+      // Re-uploading a file replaces that file's data instead of stacking on top.
+      const replacedNames = new Set(parsedFiles.map((entry) => entry.meta.fileName));
+      const keptEvents = events.filter((event) => !replacedNames.has(event.sourceFile));
+      const incomingEvents = parsedFiles.flatMap((entry) => entry.events);
+      const mergedEvents = dedupeEvents([...keptEvents, ...incomingEvents]).events;
+      const addedEvents = mergedEvents.length - keptEvents.length;
 
-  const handleOrderFileLoaded = (file: ImportedOrderFile) => {
-    setOrderFile(file);
+      const nextFiles = [...files];
+      for (const entry of parsedFiles) {
+        const index = nextFiles.findIndex((item) => item.id === entry.meta.id);
+        if (index >= 0) nextFiles[index] = entry.meta;
+        else nextFiles.push(entry.meta);
+      }
 
-    // Map raw records to OrderItem[] preserving all original data
-    const mappedOrders: OrderItem[] = file.rows.map((row, idx) => {
-      const subOrderNo = row['Sub Order No'] || row['sub order no'] || `ord-${idx + 1}`;
-      const sku = row['SKU'] || row['sku'] || 'GENERAL-SKU';
-      const title = row['Product Name'] || row['product name'] || sku;
-      const orderDate = row['Order Date'] || row['order date'] || new Date().toISOString().split('T')[0];
-      const state = row['Customer State'] || row['customer state'] || '';
-      const listedPrice = Number((row['Supplier Listed Price (Incl. GST + Commission)'] || '0').replace(/[^0-9.-]/g, '')) || 0;
-      const discPrice = Number((row['Supplier Discounted Price (Incl GST and Commision)'] || '0').replace(/[^0-9.-]/g, '')) || listedPrice;
-      const qty = Number((row['Quantity'] || '1').replace(/[^0-9]/g, '')) || 1;
-      const packetId = row['Packet Id'] || row['packet id'] || '';
-      const rawStatus = (row['Reason for Credit Entry'] || row['reason for credit entry'] || '').toUpperCase();
+      setEvents(mergedEvents);
+      setFiles(nextFiles);
+      void saveLedgerEvents(mergedEvents);
+      void saveLedgerFiles(nextFiles);
 
-      let status: OrderItem['status'] = 'Delivered';
-      let returnType: OrderItem['returnType'] = undefined;
+      if (parsedFiles.length > 0) {
+        messages.unshift(
+          addedEvents > 0
+            ? `Loaded ${addedEvents} ledger entries from ${parsedFiles.length} file(s).`
+            : `No ledger entries found in these files.`,
+        );
+      }
 
-      if (rawStatus.includes('READY_TO_SHIP')) status = 'Ready To Ship';
-      else if (rawStatus.includes('HOLD')) status = 'Hold';
-      else if (rawStatus.includes('SHIPPED')) status = 'Shipped';
-      else if (rawStatus.includes('RTO')) { status = 'RTO'; returnType = 'RTO'; }
-      else if (rawStatus.includes('CANCEL')) { status = 'Cancelled'; returnType = 'CANCELLED'; }
-      else if (rawStatus.includes('DELIVERED')) { status = 'Delivered'; returnType = 'DELIVERED'; }
-      else if (rawStatus.includes('PENDING')) status = 'Ready To Ship';
+      const warningCount = messages.length - (parsedFiles.length > 0 ? 1 : 0);
+      setNotice(messages.length > 0 ? { tone: warningCount > 0 ? 'warn' : 'ok', messages } : null);
+      setIsParsing(false);
+    },
+    [events, files],
+  );
 
-      return {
-        id: `ord-${subOrderNo}-${idx}`,
-        orderId: subOrderNo,
-        orderNumber: subOrderNo,
-        marketplace: 'meesho',
-        orderDate,
-        sku,
-        title,
-        quantity: qty,
-        customerCity: '',
-        customerState: state,
-        salePrice: discPrice || listedPrice,
-        productCost: 0,
-        packagingCost: 0,
-        marketplaceCommission: 0,
-        shippingFee: 0,
-        reverseShippingFee: 0,
-        taxesAndGst: 0,
-        expectedPayout: discPrice || listedPrice,
-        actualPayout: status === 'Delivered' ? (discPrice || listedPrice) : 0,
-        status,
-        returnType,
-        reconciliationStatus: status === 'Delivered' ? 'Settled' : 'Pending',
-        discrepancyAmount: 0,
-        claimEligible: status === 'RTO',
-        awbNumber: packetId,
-        rawRow: row,
-      };
-    });
-
-    setOrders(mappedOrders);
-    saveOrderData(file, mappedOrders);
+  const handleRemoveFile = (id: string) => {
+    const file = files.find((item) => item.id === id);
+    if (!file) return;
+    const nextFiles = files.filter((item) => item.id !== id);
+    const nextEvents = events.filter((event) => event.sourceFile !== file.fileName);
+    setFiles(nextFiles);
+    setEvents(nextEvents);
+    void saveLedgerFiles(nextFiles);
+    void saveLedgerEvents(nextEvents);
   };
 
-  const handleClearOrderFile = () => {
-    setOrderFile(null);
-    setOrders([]);
-    clearOrderData();
-  };
-
-  const handleAddClaim = (newClaim: ClaimItem) => {
-    setClaims((prev) => {
-      const next = [newClaim, ...prev];
-      saveClaims(next);
-      return next;
-    });
-  };
-
-  const handleUpdateClaimStatus = (claimId: string, status: ClaimItem['status'], amountApproved: number) => {
-    setClaims((prev) => {
-      const next = prev.map((c) => (c.id === claimId ? { ...c, status, amountApproved } : c));
-      saveClaims(next);
-      return next;
-    });
+  const handleClearAll = () => {
+    const confirmed = window.confirm(
+      'Remove every uploaded Meesho file and its ledger entries? SKU costs are kept.',
+    );
+    if (!confirmed) return;
+    setFiles([]);
+    setEvents([]);
+    setNotice(null);
+    void clearLedgerState();
   };
 
   const handleSaveSku = (skuItem: SkuMasterItem) => {
-    setSkuMasterList((prev) => {
-      const idx = prev.findIndex(s => s.sku === skuItem.sku);
-      const next = idx >= 0 ? [...prev] : [skuItem, ...prev];
-      if (idx >= 0) {
-        next[idx] = skuItem;
-      }
-      saveSkuMaster(next);
-      return next;
-    });
-
-    // Update existing orders linked to this SKU with new cost and weight
-    setOrders((prev) => {
-      const next = prev.map((o) => {
-        if (o.sku.toLowerCase() === skuItem.sku.toLowerCase()) {
-          const actualWeight = skuItem.weightGrams;
-          const billed = o.billedWeightGrams || actualWeight;
-          const isWeightOver = billed > actualWeight + 200;
-          return {
-            ...o,
-            productCost: skuItem.costPrice,
-            packagingCost: skuItem.packagingCost,
-            actualWeightGrams: actualWeight,
-            weightDiscrepancy: isWeightOver,
-          };
-        }
-        return o;
-      });
-      saveOrders(next);
-      return next;
-    });
+    const existing = skuMasterList.findIndex(
+      (item) => item.sku.toLowerCase() === skuItem.sku.toLowerCase(),
+    );
+    const next = [...skuMasterList];
+    if (existing >= 0) next[existing] = skuItem;
+    else next.unshift(skuItem);
+    setSkuMasterList(next);
+    void saveSkuMaster(next);
   };
 
   const handleDeleteSku = (skuCode: string) => {
-    setSkuMasterList((prev) => {
-      const next = prev.filter(s => s.sku !== skuCode);
-      saveSkuMaster(next);
-      return next;
-    });
+    const next = skuMasterList.filter(
+      (item) => item.sku.toLowerCase() !== skuCode.toLowerCase(),
+    );
+    setSkuMasterList(next);
+    void saveSkuMaster(next);
   };
 
-  const handleUpdateOrderStatus = (orderId: string, status: OrderItem['status']) => {
-    setOrders((prev) => {
-      const next = prev.map((o) => (o.orderId === orderId ? { ...o, status } : o));
-      saveOrders(next);
-      return next;
-    });
-  };
-
-  const handleOpenClaimFromOrder = (order: OrderItem) => {
-    const claim: ClaimItem = {
-      id: `clm-${Date.now()}`,
-      orderId: order.orderId,
-      marketplace: order.marketplace,
-      sku: order.sku,
-      claimType: order.weightDiscrepancy 
-        ? 'Weight Mismatch Overcharge' 
-        : order.status === 'Customer Return' 
-        ? 'Wrong Return' 
-        : 'Payment Not Credited',
-      amountClaimed: order.discrepancyAmount > 0 ? order.discrepancyAmount : 150,
-      amountApproved: 0,
-      filingDate: new Date().toISOString().split('T')[0],
-      status: 'Filed',
-      ticketId: `TCK-${Math.floor(100000 + Math.random() * 900000)}`,
-      deadlineDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      evidenceNotes: order.discrepancyReason || 'Raised via Reconciliation Ledger dispute button.',
-    };
-    handleAddClaim(claim);
-    setActiveTab('claims');
-  };
-
-  const discrepanciesCount = useMemo(() => {
-    return orders.filter((o) => o.reconciliationStatus === 'Discrepancy' || o.weightDiscrepancy).length;
-  }, [orders]);
+  const heading = TAB_TITLES[activeTab];
 
   return (
     <div className="min-h-screen flex bg-surface">
-      
-      {/* 1. Left Sidebar Navigation */}
       <Sidebar
         activeTab={activeTab}
         onSelectTab={setActiveTab}
-        discrepanciesCount={discrepanciesCount}
         isCollapsed={isSidebarCollapsed}
       />
 
-      {/* 2. Right Workspace Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
-        
-        {/* Top Header */}
         <Header
-          title={TAB_TITLES[activeTab] || 'Overview & P&L'}
-          currentMarketplace={currentMarketplace}
-          onSelectMarketplace={setCurrentMarketplace}
-          totalOrders={orders.length}
+          title={heading.title}
+          subtitle={heading.subtitle}
+          totalOrders={ledger.items.length}
           isSidebarCollapsed={isSidebarCollapsed}
           onToggleSidebar={handleToggleSidebar}
         />
 
-        {/* Workspace Body */}
-        <main className="flex-1 p-6 md:p-8 space-y-8 max-w-[1400px] w-full">
-          
-          {/* Tab 1: Overview & P&L - Orders Excel Table */}
-          {activeTab === 'overview' && (
-            <div className="space-y-6 animate-fadeIn">
-              <OrdersExcelTable
-                orderFile={orderFile}
-                onFileLoaded={handleOrderFileLoaded}
-                onClearFile={handleClearOrderFile}
-              />
+        <main className="flex-1 p-6 md:p-8 space-y-6 max-w-[1400px] w-full">
+          {!isLoaded ? (
+            <div className="flex items-center justify-center py-24 text-sm text-ink-muted gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading saved data…
             </div>
-          )}
+          ) : (
+            <>
+              {notice && (
+                <div
+                  className={`rounded-xl border px-4 py-3 flex items-start gap-3 ${
+                    notice.tone === 'ok'
+                      ? 'bg-leaf-soft/50 border-leaf/30 text-leaf-deep'
+                      : 'bg-sun-soft/60 border-sun/40 text-sun-deep'
+                  }`}
+                >
+                  {notice.tone === 'ok' ? (
+                    <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  )}
+                  <div className="flex-1 min-w-0 text-[11px] leading-relaxed space-y-0.5">
+                    {notice.messages.slice(0, 6).map((message, index) => (
+                      <p key={`${message}-${index}`}>{message}</p>
+                    ))}
+                    {notice.messages.length > 6 && (
+                      <p className="font-bold">…and {notice.messages.length - 6} more note(s).</p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setNotice(null)}
+                    className="p-1 rounded-lg hover:bg-white/40 transition-all shrink-0"
+                    aria-label="Dismiss"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
 
-          {/* Tab 2: Full Reconciliation Table */}
-          {activeTab === 'reconciliation' && (
-            <div className="space-y-6 animate-fadeIn">
-              <ReconciliationTable
-                orders={displayedOrders}
-                onOpenClaim={handleOpenClaimFromOrder}
-              />
-            </div>
-          )}
+              {activeTab === 'dashboard' && (
+                <div className="space-y-6 animate-fadeIn">
+                  <LedgerUploader
+                    files={files}
+                    isParsing={isParsing}
+                    onUpload={handleUpload}
+                    onRemove={handleRemoveFile}
+                    onClearAll={handleClearAll}
+                  />
+                  <LedgerDashboard
+                    ledger={ledger}
+                    files={files}
+                    onOpenSkuManager={() => setActiveTab('sku-manager')}
+                    onOpenOrders={() => setActiveTab('orders')}
+                  />
+                </div>
+              )}
 
-          {/* Tab 3: Inbound Return & Barcode Scanner */}
-          {activeTab === 'scanner' && (
-            <div className="space-y-6 animate-fadeIn">
-              <ReturnAuditScanner
-                orders={orders}
-                onFileClaimFromScan={handleAddClaim}
-                onUpdateOrderStatus={handleUpdateOrderStatus}
-              />
-            </div>
-          )}
+              {activeTab === 'orders' && (
+                <div className="space-y-6 animate-fadeIn">
+                  <LedgerOrdersTable items={ledger.items} />
+                </div>
+              )}
 
-          {/* Tab 4: Master SKU & Cost Engine */}
-          {activeTab === 'sku-manager' && (
-            <div className="space-y-6 animate-fadeIn">
-              <SkuManager
-                skuMasterList={skuMasterList}
-                onSaveSku={handleSaveSku}
-                onDeleteSku={handleDeleteSku}
-              />
-            </div>
+              {activeTab === 'sku-manager' && (
+                <div className="space-y-6 animate-fadeIn">
+                  <SkuManager
+                    skuMasterList={skuMasterList}
+                    detectedSkus={detectedSkus}
+                    onSaveSku={handleSaveSku}
+                    onDeleteSku={handleDeleteSku}
+                  />
+                </div>
+              )}
+            </>
           )}
-
-          {/* Tab 5: SKU Matrix */}
-          {activeTab === 'skus' && (
-            <div className="space-y-6 animate-fadeIn">
-              <SkuMatrix 
-                skus={skus} 
-                onOpenSkuManager={() => setActiveTab('sku-manager')}
-              />
-            </div>
-          )}
-
-          {/* Tab 6: Claims Tracker */}
-          {activeTab === 'claims' && (
-            <div className="space-y-6 animate-fadeIn">
-              <ClaimsTracker
-                claims={claims}
-                orders={displayedOrders}
-                onAddClaim={handleAddClaim}
-                onUpdateClaimStatus={handleUpdateClaimStatus}
-              />
-            </div>
-          )}
-
         </main>
       </div>
-
     </div>
   );
 }

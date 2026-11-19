@@ -1,29 +1,22 @@
 import React, { useState } from 'react';
 import { Logo } from './Logo';
-import {
-  BarChart3,
-  FileCheck2,
-  Sparkles,
-  ShieldCheck,
-  Package,
-  Barcode,
-} from 'lucide-react';
+import { LayoutDashboard, Table2, Package } from 'lucide-react';
 
-export type TabType = 'overview' | 'reconciliation' | 'skus' | 'sku-manager' | 'scanner' | 'claims';
+export type TabType = 'dashboard' | 'orders' | 'sku-manager';
 
 interface SidebarProps {
   activeTab: TabType;
   onSelectTab: (tab: TabType) => void;
-  discrepanciesCount: number;
   isCollapsed: boolean;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({
-  activeTab,
-  onSelectTab,
-  discrepanciesCount,
-  isCollapsed,
-}) => {
+const NAV_ITEMS: Array<{ id: TabType; label: string; icon: typeof LayoutDashboard }> = [
+  { id: 'dashboard', label: 'Profit Dashboard', icon: LayoutDashboard },
+  { id: 'orders', label: 'Order Ledger', icon: Table2 },
+  { id: 'sku-manager', label: 'SKU Costs', icon: Package },
+];
+
+export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onSelectTab, isCollapsed }) => {
   const [isHovered, setIsHovered] = useState(false);
 
   // When collapsed: hovering opens it, cursor leaving closes it.
@@ -31,50 +24,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const isVisuallyOpen = !isCollapsed || isHovered;
 
   const handleMouseEnter = () => {
-    if (isCollapsed) {
-      setIsHovered(true);
-    }
+    if (isCollapsed) setIsHovered(true);
   };
 
   const handleMouseLeave = () => {
-    if (isCollapsed) {
-      setIsHovered(false);
-    }
+    if (isCollapsed) setIsHovered(false);
   };
-
-  const navItems = [
-    {
-      id: 'overview' as TabType,
-      label: 'Overview & P&L',
-      icon: BarChart3,
-    },
-    {
-      id: 'reconciliation' as TabType,
-      label: 'Reconciliation Ledger',
-      icon: FileCheck2,
-      badge: discrepanciesCount > 0 ? `${discrepanciesCount} alerts` : undefined,
-    },
-    {
-      id: 'scanner' as TabType,
-      label: 'Return & Barcode Audit',
-      icon: Barcode,
-    },
-    {
-      id: 'sku-manager' as TabType,
-      label: 'SKU Master & Costs',
-      icon: Package,
-    },
-    {
-      id: 'skus' as TabType,
-      label: 'SKU Profit Matrix',
-      icon: Sparkles,
-    },
-    {
-      id: 'claims' as TabType,
-      label: 'Dispute & SPF Claims',
-      icon: ShieldCheck,
-    },
-  ];
 
   return (
     <aside
@@ -98,9 +53,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <h1 className="text-xl font-bold font-display text-white tracking-tight leading-none truncate">
               SellWise
             </h1>
-            <span className="text-[10px] text-blue-200 font-medium mt-0.5 truncate">
-              Profit & Audit Suite
-            </span>
+            <span className="text-[10px] text-blue-200 font-medium mt-0.5 truncate">Meesho Profit Ledger</span>
           </div>
         )}
       </div>
@@ -113,7 +66,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         )}
 
-        {navItems.map((item) => {
+        {NAV_ITEMS.map((item) => {
           const active = activeTab === item.id;
           const Icon = item.icon;
           return (
@@ -137,28 +90,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 />
                 {isVisuallyOpen && <span className="truncate">{item.label}</span>}
               </div>
-
-              {/* Badge when expanded */}
-              {isVisuallyOpen && item.badge && (
-                <span
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ml-1.5 ${
-                    active
-                      ? 'bg-rose-100 text-rose-700 border border-rose-300'
-                      : 'bg-rose-500 text-white shadow-xs'
-                  }`}
-                >
-                  {item.badge}
-                </span>
-              )}
-
-              {/* Indicator Dot when collapsed */}
-              {!isVisuallyOpen && item.badge && (
-                <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-rose-400 ring-2 ring-[#1D4ED8]" />
-              )}
             </button>
           );
         })}
       </div>
+
+      {isVisuallyOpen && (
+        <div className="p-3 border-t border-white/15">
+          <p className="text-[10px] text-blue-200/70 leading-relaxed">
+            Meesho only for now. Flipkart and Amazon can be added as their own parsers.
+          </p>
+        </div>
+      )}
     </aside>
   );
 };
